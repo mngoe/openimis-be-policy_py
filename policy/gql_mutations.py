@@ -8,6 +8,8 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from .validations import validate_idle_policy
+from insuree.models import Insuree
+import json, requests
 
 
 class PolicyInputType(OpenIMISMutation.Input):
@@ -68,6 +70,18 @@ class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
         from core.utils import TimeUtils
         data['validity_from'] = TimeUtils.now()
         update_or_create_policy(data, user)
+        familyid = data.get('family_id', None)
+        patients = Insuree.objects.filter(family=familyid)
+        url = 'https://csu.labspos.com/api/v1/patient/information/archive'
+        for patient in patients:
+            patient_data = {
+                "patient_id": patient.chf_id
+            }
+            labspos_request = requests.post(url, data=json.dumps(patient_data),
+                    headers={"Content-Type": "application/json"})
+            print("labspos response for chf_id ",
+                patient.chf_id, " ", labspos_request.json()
+            )
         return None
 
 
