@@ -19,6 +19,7 @@ from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.utils import MonthsAdd
+import json, requests
 
 from .models import Policy, PolicyRenewal
 
@@ -65,6 +66,19 @@ class PolicyService:
         policy = Policy.objects.create(**data)
         policy.save()
         update_insuree_policies(policy, user.id_for_audit)
+        familyid = data.get('family_id', None)
+        if familyid:
+            patients = Insuree.objects.filter(family=familyid)
+            url = 'https://csu.labspos.com/api/v1/patient/information/archive'
+            for patient in patients:
+                patient_data = {
+                    "patient_id": patient.chf_id
+                }
+                labspos_request = requests.post(url, data=json.dumps(patient_data),
+                        headers={"Content-Type": "application/json"})
+                print("labspos response for chf_id ",
+                    patient.chf_id, " ", labspos_request.json()
+                )
         return policy
 
     def _clean_mutation_info(self, data):
