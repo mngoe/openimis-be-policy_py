@@ -20,7 +20,7 @@ class PolicyValuesTestCase(TestCase):
             })
 
         product = create_test_product("SIMPLE", custom_props={
-            "member_count": 5,
+            "max_members": 5,
             "administration_period": 0,
             "lump_sum": 0,
             "premium_adult": 300,
@@ -64,11 +64,11 @@ class PolicyValuesTestCase(TestCase):
             })
 
         product = create_test_product("SIMPLE", custom_props={
-            "member_count": 5,
+            "max_members": 5,
             "administration_period": 0,
             "lump_sum": 200,
             "threshold": 2,
-            "grace_period": 1,
+            "grace_period_enrolment": 1,
             "start_cycle_1": "01-01",
             "start_cycle_2": "01-06",
             "premium_adult": 300,
@@ -114,11 +114,11 @@ class PolicyValuesTestCase(TestCase):
             })
 
         product = create_test_product("SIMPLE", custom_props={
-            "member_count": 2,
+            "max_members": 2,
             "administration_period": 1,
             "lump_sum": 200,
             "threshold": 1,
-            "grace_period": 1,
+            "grace_period_enrolment": 1,
             "start_cycle_1": "01-01",
             "start_cycle_2": "01-06",
             "premium_adult": 300,

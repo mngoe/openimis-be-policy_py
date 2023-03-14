@@ -28,8 +28,8 @@ def set_start_date(policy):
         return
 
     grace = 0
-    if policy.stage == Policy.STAGE_NEW and product.grace_period:
-        grace = product.grace_period
+    if policy.stage == Policy.STAGE_NEW and product.grace_period_enrolment:
+        grace = product.grace_period_enrolment
     elif policy.stage == Policy.STAGE_RENEWED and product.grace_period_renewal:
         grace = product.grace_period_renewal
 
@@ -68,8 +68,8 @@ def family_counts(product, family):
     extra_children = 0
     total = 0
     # sad, but can't get the limit inside the prefetch
-    # product.member_count is NOT NULL (but can be 0)
-    for member in family.members.all()[:product.member_count]:
+    # product.max_members is NOT NULL (but can be 0)
+    for member in family.members.all()[:product.max_members]:
         total += 1
         age = member.age()
         if age >= CoreConfig.age_of_majority and member.relationship_id != 7:
@@ -174,7 +174,7 @@ def set_value(policy, family, prev_policy):
 
 def policy_values(policy, family, prev_policy):
     members = family.members.filter(validity_to__isnull=True).count()
-    max_members = policy.product.member_count
+    max_members = policy.product.max_members
     above_max = max(0, members - max_members)
     warnings = []
     if above_max:

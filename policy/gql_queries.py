@@ -7,7 +7,17 @@ from product.schema import ProductGQLType
 
 
 class PolicyGQLType(DjangoObjectType):
-    sum_premiums = graphene.Float(source='sum_premiums')
+    sum_premiums = graphene.Float(source="sum_premiums")
+
+    def resolve_family(self, info):
+        if "family_loader" in info.context.dataloaders and self.family_id:
+            return info.context.dataloaders["family_loader"].load(self.family_id)
+        return self.family
+
+    def resolve_product(self, info):
+        if "product_loader" in info.context.dataloaders and self.product_id:
+            return info.context.dataloaders["product_loader"].load(self.product_id)
+        return self.product
 
     class Meta:
         model = Policy

@@ -17,12 +17,13 @@ from .services import *
 
 class EligibilityServiceTestCase(TestCase):
     def setUp(self) -> None:
+        super(EligibilityServiceTestCase, self).setUp()
         self.user = mock.Mock(is_anonymous=False)
         self.user.has_perms = mock.MagicMock(return_value=True)
 
     def test_eligibility_request_permission_denied(self):
         with mock.patch("django.db.backends.utils.CursorWrapper") as mock_cursor:
-            mock_cursor.return_value.__enter__.return_value.description = None
+            mock_cursor.return_value.description = None
             mock_user = mock.Mock(is_anonymous=False)
             mock_user.has_perms = mock.MagicMock(return_value=False)
             req = EligibilityRequest(chf_id="a")
@@ -43,11 +44,11 @@ class EligibilityServiceTestCase(TestCase):
                     True,
                     True,
                 ],
-            ][::-1]
-
-            mock_cursor.return_value.__enter__.return_value.fetchone = (
-                lambda: return_values.pop()
-            )
+            ]
+            # required for all modules tests
+            mock_cursor.return_value.fetchone.side_effect = return_values
+            # required for policy module tests
+            mock_cursor.return_value.__enter__.return_value.fetchone.side_effect = return_values
             mock_user = mock.Mock(is_anonymous=False)
             mock_user.has_perm = mock.MagicMock(return_value=True)
             req = EligibilityRequest(chf_id="a")
@@ -303,15 +304,13 @@ class RenewalsTestCase(TestCase):
     item_1 = None
 
     def setUp(self) -> None:
+        super(RenewalsTestCase, self).setUp()
         self.i_user = InteractiveUser(
             login_name="test_batch_run", audit_user_id=978911, id=97891
         )
         self.user = User(i_user=self.i_user)
 
         self.item_1 = create_test_item("D")
-
-    def tearDown(self) -> None:
-        self.item_1.delete()
 
     def test_insert_renewals(self):
         # Given
@@ -466,7 +465,8 @@ class RenewalsTestCase(TestCase):
 
         insuree_newpic = create_test_insuree(
             custom_props={"photo_date": datetime.datetime.now() - datetimedelta(days=30)})
-        insuree_oldpic = create_test_insuree(custom_props={"photo_date": "2010-01-01", "chf_id": "CHFMARK"})  # 5 years by default
+        insuree_oldpic = create_test_insuree(
+            custom_props={"photo_date": "2010-01-01", "chf_id": "CHFMARK"})  # 5 years by default
         product = create_test_product("VISIT")
         officer = create_test_officer(custom_props={"phone": "+32444444444", "phone_communication": True})
         photo_newpic = create_test_photo(insuree_newpic.id, officer.id)
