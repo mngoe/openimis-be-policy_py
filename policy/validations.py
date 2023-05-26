@@ -14,7 +14,7 @@ def validate_idle_policy(policy_input):
         if head_insuree.score:
             if head_insuree.score < PolicyConfig.max_insuree_score:
                 return [{
-                    'message': _("policy.mutation.failed_to_update_policy"),
+                    'message': ("failed to create policy"),
                     'detail': ("Head insuree doesn't have the minimum\
                         score required to have a policy. The minimum score is %s") % PolicyConfig.max_insuree_score
                 }]
