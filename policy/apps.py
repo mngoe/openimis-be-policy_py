@@ -18,6 +18,7 @@ DEFAULT_CFG = {
     "policy_location_via": "family",  # ... or product
     "default_eligibility_disabled": False,
     "activation_option": 1,
+    "max_insuree_score": 100,
 }
 
 
@@ -41,6 +42,7 @@ class PolicyConfig(AppConfig):
     ACTIVATION_OPTION_PAYMENT = 2
     ACTIVATION_OPTION_READY = 3
     activation_option = ACTIVATION_OPTION_CONTRIBUTION
+    max_insuree_score = 100
 
     def _configure_permissions(self, cfg):
         PolicyConfig.gql_query_policies_perms = cfg["gql_query_policies_perms"]
@@ -63,6 +65,9 @@ class PolicyConfig(AppConfig):
     def _configure_location(self, cfg):
         PolicyConfig.policy_location_via = cfg["policy_location_via"]
 
+    def _configure_insuree_maximum_score(self, cfg):
+        PolicyConfig.max_insuree_score = cfg["max_insuree_score"]
+
     def _configure_activation(self, cfg):
         PolicyConfig.activation_option = cfg["activation_option"]
 
@@ -74,3 +79,4 @@ class PolicyConfig(AppConfig):
         self._configure_location(cfg)
         self._configure_eligibility(cfg)
         self._configure_activation(cfg)
+        self._configure_insuree_maximum_score(cfg)
