@@ -77,7 +77,7 @@ class PolicyService:
                 labspos_request = requests.post(url, data=json.dumps(patient_data),
                         headers={"Content-Type": "application/json"})
                 print("labspos response for chf_id ",
-                    patient.chf_id, " ", labspos_request.json()
+                    patient.chf_id, " ", labspos_request
                 )
         return policy
 
