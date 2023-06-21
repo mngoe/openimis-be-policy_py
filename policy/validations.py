@@ -23,7 +23,7 @@ def validate_idle_policy(policy_input):
     if not canSave:
         return [{
                 'message': ("failed to create policy"),
-                'detail': ("Cannot create an HIV policy for a patient that does not have HIV (%s)") % (member.chf_id)
+                'detail': ("Cannot create an HIV policy for a patient that does not have HIV")
             }]
     policy_uuid = policy_input.get('uuid')
     if policy_uuid:
