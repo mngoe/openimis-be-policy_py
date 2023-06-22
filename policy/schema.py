@@ -8,7 +8,7 @@ from django.db.models import Prefetch
 from django.db.models import Q
 from .services import ByInsureeRequest, ByInsureeService
 from .services import ByFamilyRequest, ByFamilyService
-from .services import EligibilityRequest, EligibilityService
+from .services import EligibilityRequest, EligibilityService, validate_policy_number
 from .apps import PolicyConfig
 from django.utils.translation import gettext as _
 import graphene_django_optimizer as gql_optimizer
@@ -84,6 +84,12 @@ class Query(graphene.ObjectType):
     )
     policy_officers = DjangoFilterConnectionField(
         OfficerGQLType, search=graphene.String()
+    )
+    policy_number_validity = graphene.Field(
+        graphene.Boolean,
+        policyNumber=graphene.String(required=True),
+        newPolicy=graphene.Boolean(required=False),
+        description="Checks that the specified cheque number is valid"
     )
 
     def resolve_policy_values(self, info, **kwargs):
@@ -267,6 +273,13 @@ class Query(graphene.ObjectType):
 
         return qs
 
+    def resolve_policy_number_validity(self, info, **kwargs):
+        errors = validate_policy_number(kwargs['policyNumber'], kwargs.get('newPolicy', False))
+        print("Errors: ", errors)
+        if errors:
+            return False
+        else:
+            return True
 
 class Mutation(graphene.ObjectType):
     create_policy = CreatePolicyMutation.Field()

@@ -31,6 +31,7 @@ class Policy(core_models.VersionedModel):
     offline = models.BooleanField(db_column='isOffline', blank=True, null=True)
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # row_id = models.BinaryField(db_column='RowID', blank=True, null=True)
+    policy_number = models.CharField(db_column='policyNumber', max_length=50, blank=True, null=True)
 
     def sum_premiums(self, photo=False):
         return sum([p.amount for p in self.premiums.filter(is_photo_fee=photo).all()])
@@ -45,7 +46,7 @@ class Policy(core_models.VersionedModel):
         return self.family.members.filter(validity_to__isnull=True).count() < self.product.max_members
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblPolicy'
 
     STATUS_IDLE = 1
