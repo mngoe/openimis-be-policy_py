@@ -22,6 +22,7 @@ class PolicyInputType(OpenIMISMutation.Input):
     product_id = graphene.Int(required=True)
     family_id = graphene.Int(required=True)
     officer_id = graphene.Int(required=True)
+    policy_number=graphene.String(required=True)
 
 
 class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):

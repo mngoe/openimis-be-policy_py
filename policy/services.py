@@ -22,6 +22,7 @@ from policy.utils import MonthsAdd
 import json, requests
 
 from .models import Policy, PolicyRenewal
+from cs.models import ChequeImportLine
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,16 @@ class PolicyService:
         if policy_uuid:
             return self.update_policy(data, user)
         else:
+            policy_number = data.get('policy_number', None)
+            if policy_number:
+                errors = validate_policy_number(policy_number, True)
+                if len(errors):
+                    raise Exception((errors[0]["message"]))
+                cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number, chequeImportLineStatus='new')
+                if cheques:
+                    current_cheque = cheques[0]
+                    setattr(current_cheque, "chequeImportLineStatus", "used")
+                    current_cheque.save()
             return self.create_policy(data, user)
 
     @register_service_signal('policy_service.update')
@@ -71,19 +82,19 @@ class PolicyService:
             setattr(policy, "effective_date", data['start_date'])
         policy.save()
         update_insuree_policies(policy, user.id_for_audit)
-        familyid = data.get('family_id', None)
-        if familyid:
-            patients = Insuree.objects.filter(family=familyid)
-            url = 'https://csu.labspos.com/api/v1/patient/information/archive'
-            for patient in patients:
-                patient_data = {
-                    "patient_id": patient.chf_id
-                }
-                labspos_request = requests.post(url, data=json.dumps(patient_data),
-                        headers={"Content-Type": "application/json"})
-                print("labspos response for chf_id ",
-                    patient.chf_id, " ", labspos_request
-                )
+        # familyid = data.get('family_id', None)
+        # if familyid:
+        #     patients = Insuree.objects.filter(family=familyid)
+        #     url = 'https://csu.labspos.com/api/v1/patient/information/archive'
+        #     for patient in patients:
+        #         patient_data = {
+        #             "patient_id": patient.chf_id
+        #         }
+        #         labspos_request = requests.post(url, data=json.dumps(patient_data),
+        #                 headers={"Content-Type": "application/json"})
+        #         print("labspos response for chf_id ",
+        #             patient.chf_id, " ", labspos_request
+        #         )
         return policy
 
     def _clean_mutation_info(self, data):
@@ -1038,3 +1049,17 @@ def policy_status_payment_matched(policy):
     if PolicyConfig.activation_option == PolicyConfig.ACTIVATION_OPTION_PAYMENT \
             and policy.status == Policy.STATUS_IDLE:
         policy.status = Policy.STATUS_ACTIVE
+
+def validate_policy_number(policy_number, is_new_policy=False):
+    if is_new_policy:
+        print("policy_number ", policy_number)
+        print("is_new_policy ", is_new_policy)
+        cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number)
+        print("cheque ", cheques)
+        if cheques:
+            if cheques[0].chequeImportLineStatus=="used":
+                return [{"message": "Cheque %s is already used" % policy_number}]
+
+    if ChequeImportLine.objects.filter(chequeImportLineCode=policy_number).exists()==False:
+        return [{"message": "Cheque number %s does not exists in system" % policy_number}]
+    return []
