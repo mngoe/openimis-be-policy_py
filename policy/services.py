@@ -61,6 +61,8 @@ class PolicyService:
 
     @register_service_signal('policy_service.update')
     def update_policy(self, data, user):
+        if "policy_number" in data:
+            data.pop('policy_number')
         data = self._clean_mutation_info(data)
         policy_uuid = data.pop('uuid') if 'uuid' in data else None
         policy = Policy.objects.get(uuid=policy_uuid)
