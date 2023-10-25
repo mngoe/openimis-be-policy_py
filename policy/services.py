@@ -1060,8 +1060,8 @@ def validate_policy_number(policy_number, is_new_policy=False):
         print("cheque ", cheques)
         if cheques:
             if cheques[0].chequeImportLineStatus=="used":
-                return [{"message": "Cheque %s is already used" % policy_number}]
+                return [{"message": "Chèque %s déjà utilisé" % policy_number}]
 
     if ChequeImportLine.objects.filter(chequeImportLineCode=policy_number).exists()==False:
-        return [{"message": "Cheque number %s does not exists in system" % policy_number}]
+        return [{"message": "Le chèque %s n'existe pas dans le système" % policy_number}]
     return []
