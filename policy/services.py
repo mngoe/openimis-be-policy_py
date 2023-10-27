@@ -43,6 +43,7 @@ class PolicyService:
 
     @register_service_signal('policy_service.create_or_update')
     def update_or_create(self, data, user):
+        print("data is ", data)
         policy_uuid = data.get('uuid', None)
         if policy_uuid:
             return self.update_policy(data, user)
@@ -50,9 +51,11 @@ class PolicyService:
             policy_number = data.get('policy_number', None)
             if policy_number:
                 errors = validate_policy_number(policy_number, True)
+                print("errors ", errors)
                 if len(errors):
                     raise Exception((errors[0]["message"]))
                 cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number, chequeImportLineStatus='new')
+                print("cheques ", cheques)
                 if cheques:
                     current_cheque = cheques[0]
                     setattr(current_cheque, "chequeImportLineStatus", "used")
@@ -75,6 +78,7 @@ class PolicyService:
 
     @register_service_signal('policy_service.create')
     def create_policy(self, data, user):
+        print("the data: ", data)
         data = self._clean_mutation_info(data)
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
