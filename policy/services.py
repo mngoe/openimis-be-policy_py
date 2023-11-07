@@ -79,7 +79,6 @@ class PolicyService:
 
     @register_service_signal('policy_service.create')
     def create_policy(self, data, user):
-        print("the data: ", data)
         data = self._clean_mutation_info(data)
         if PolicyConfig.one_policy_per_program == True:
             if "product_id" in data:
