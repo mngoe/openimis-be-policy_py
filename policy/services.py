@@ -87,7 +87,7 @@ class PolicyService:
                             prod = Product.objects.get(id=policy.product.id)
                             if prod:
                                 if program.idProgram == prod.program.idProgram:
-                                    raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un meme programe")
+                                    raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme")
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
         # we activate the policy immediatelly
