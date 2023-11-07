@@ -19,6 +19,7 @@ from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.utils import MonthsAdd
+from product.models import Product
 import json, requests
 
 from .models import Policy, PolicyRenewal
@@ -80,6 +81,17 @@ class PolicyService:
     def create_policy(self, data, user):
         print("the data: ", data)
         data = self._clean_mutation_info(data)
+        if PolicyConfig.one_policy_per_program == True:
+            if "product_id" in data:
+                product = Product.objects.get(id=data["product_id"])
+                program = product.program
+                if program:
+                    for policy in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
+                        if policy.status == Policy.STATUS_ACTIVE:
+                            prod = Product.objects.get(id=policy.product.id)
+                            if prod:
+                                if program.idProgram == prod.program.idProgram:
+                                    raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme")
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
         # we activate the policy immediatelly

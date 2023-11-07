@@ -17,6 +17,7 @@ DEFAULT_CFG = {
     "policy_renewal_interval": 14,  # Notify renewal nb of days before expiry date
     "policy_location_via": "family",  # ... or product
     "default_eligibility_disabled": False,
+    "one_policy_per_program": False,
     "activation_option": 1,
 }
 
@@ -33,6 +34,7 @@ class PolicyConfig(AppConfig):
     gql_mutation_renew_policies_perms = []
     gql_mutation_edit_policies_perms = []
     gql_mutation_suspend_policies_perms = []
+    one_policy_per_program = False
     gql_mutation_delete_policies_perms = []
     policy_renewal_interval = 14
     policy_location_via = 'family'
@@ -51,6 +53,7 @@ class PolicyConfig(AppConfig):
         PolicyConfig.gql_mutation_renew_policies_perms = cfg["gql_mutation_renew_policies_perms"]
         PolicyConfig.gql_mutation_edit_policies_perms = cfg["gql_mutation_edit_policies_perms"]
         PolicyConfig.gql_mutation_suspend_policies_perms = cfg["gql_mutation_suspend_policies_perms"]
+        PolicyConfig.one_policy_per_program = cfg["one_policy_per_program"]
         PolicyConfig.gql_mutation_delete_policies_perms = cfg["gql_mutation_delete_policies_perms"]
         PolicyConfig.gql_query_eligibilities_perms = cfg["gql_query_eligibilities_perms"]
 
