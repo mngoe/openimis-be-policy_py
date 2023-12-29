@@ -110,7 +110,7 @@ class Query(graphene.ObjectType):
         prev_policy = None
         if 'prev_uuid' in kwargs:
             prev_policy = Policy.objects.get(uuid=kwargs.get('prev_uuid'))
-        policy, warnings = policy_values(policy, family, prev_policy)
+        policy, warnings = policy_values(policy, family, prev_policy, kwargs.get('enrollDate'))
         return PolicyAndWarningsGQLType(policy=policy, warnings=warnings)
 
     def resolve_policies(self, info, **kwargs):
