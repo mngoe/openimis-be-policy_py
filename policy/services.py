@@ -46,6 +46,41 @@ class PolicyService:
     def update_or_create(self, data, user):
         print("data is ", data)
         policy_uuid = data.get('uuid', None)
+        print("enroll_date ", data.get('enroll_date', None))
+        familyid = data.get('family_id', None)
+        insurees = Insuree.objects.filter(family=familyid)
+        product_id = data.get('product_id', None)
+        expiry_date = data.get('expiry_date', None)
+        if insurees and product_id:
+            member = insurees[0]
+            print("Dob ", member.dob)
+            date_format = "%Y-%m-%d"
+            today = py_datetime.strptime(str(py_datetime.now().date()), date_format)
+            insuree_dob = py_datetime.strptime(str(member.dob), date_format)
+            delta = today - insuree_dob
+            age_patient = int(round(delta.days / 365.0))
+            print("age_patient ", age_patient)
+            product = Product.objects.get(id=product_id)
+            print("Age Max sur le produit ", product.age_maximal)
+            print("Age Min sur le produit ", product.age_minimal)
+            the_date = py_datetime.strptime(
+                str(expiry_date), "%Y-%m-%d").date()
+            if product.age_minimal:
+                if(age_patient < product.age_minimal):
+                    # The insuree's age is lower than the min age
+                    raise Exception("L'assuré(e) avec l'age %s n'a pas encore l'age minimal requis renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_minimal)))
+            if product.age_maximal:
+                diff = product.age_maximal - age_patient
+                print("diff ", diff)
+                if(diff < 0):
+                    # The insuree's age is greater than the max age
+                    raise Exception("L'assuré(e) avec l'age %s a dépassé(e) l'age maximal renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_maximal)))
+                from dateutil.relativedelta import relativedelta
+                exp_date = the_date + relativedelta(years=+diff)
+                print("exp_date ", exp_date)
+                print(type(exp_date))
+                data["expiry_date"] = exp_date
+                print(data["expiry_date"])
         if policy_uuid:
             return self.update_policy(data, user)
         else:
