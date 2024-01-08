@@ -76,10 +76,9 @@ class PolicyService:
                     # The insuree's age is greater than the max age
                     raise Exception("L'assuré(e) avec l'age %s a dépassé(e) l'age maximal renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_maximal)))
                 from dateutil.relativedelta import relativedelta
-                exp_date = the_date + relativedelta(years=+diff)
-                print("exp_date ", exp_date)
-                print(type(exp_date))
-                data["expiry_date"] = exp_date
+                # exp_date = the_date + relativedelta(years=+diff)
+                # print("exp_date ", exp_date)
+                # data["expiry_date"] = exp_date
                 print(data["expiry_date"])
         if policy_uuid:
             return self.update_policy(data, user)
