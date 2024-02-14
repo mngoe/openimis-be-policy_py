@@ -40,6 +40,24 @@ class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
         from core.utils import TimeUtils
         data['validity_from'] = TimeUtils.now()
         PolicyService(user).update_or_create(data, user)
+        print('data------------------------',data)
+        ValidationError=""
+        products=Product.objects.filter(user_id=user.id)
+        policy=Policy.objects.filter(user_id=user.id)
+       
+        if data['product_id'] == 51:
+            print('product_id---------------------',data['product_id'])
+            for product in products:
+                if product.ProductName == 'CSU FAGEP':
+                    print('productname----------------',product.ProductName)
+                    for policies in policy:
+                        print('policies.status',policies.status)
+                        if policies.status == 2:
+
+                            raise ValidationError("L'assuré ne peut pas avoir cette police.")
+        else:
+            policy.save()
+            
         return None
 
 
