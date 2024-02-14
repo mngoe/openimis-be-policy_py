@@ -8,6 +8,8 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from .validations import validate_idle_policy
+from .models import Product
+# from product.models import Product
 
 
 class PolicyInputType(OpenIMISMutation.Input):
