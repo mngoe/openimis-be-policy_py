@@ -85,12 +85,24 @@ class PolicyService:
                 product = Product.objects.get(id=data["product_id"])
                 program = product.program
                 if program:
-                    for policy in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
-                        if policy.status == Policy.STATUS_ACTIVE:
-                            prod = Product.objects.get(id=policy.product.id)
+                    for police in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
+                        if police.status == Policy.STATUS_ACTIVE:
+                            prod = Product.objects.get(id=police.product.id)
                             if prod:
                                 if program.idProgram == prod.program.idProgram:
                                     raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme")
+                                # If the policy that the user had previously is a cheque sante,
+                                # he cannot have a fagep policy
+                                print("Comparaison ", prod.program.code, " et ", program.code)
+                                if prod.program.code == "CCS" and program.code == "PAL":
+                                    raise Exception("L'assuré ne peux pas avoir un proegramme FAGEP"\
+                                    " s'il a déja un proegramme Cheque santé actif")
+                                # Si l'assuré a une police FAGEP et on veut attribuer un programme
+                                # CCS, la police FAGEP doit se desactriver
+                                if prod.program.code == "PAL" and program.code == "CCS":
+                                    print("Mise police en attente...")
+                                    setattr(police, "status", 1)
+                                    police.save()
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
         # we activate the policy immediatelly
