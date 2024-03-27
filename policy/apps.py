@@ -21,7 +21,8 @@ DEFAULT_CFG = {
     "ACTIVATION_OPTION_CONTRIBUTION": 1,
     "CTIVATION_OPTION_PAYMENT": 2,
     "ACTIVATION_OPTION_READY": 3,
-    "contribution_receipt_length": 5
+    "contribution_receipt_length": 5,
+    "comores_features_enabled": False
 }
 
 
@@ -46,6 +47,7 @@ class PolicyConfig(AppConfig):
     ACTIVATION_OPTION_READY = None
     activation_option = None
     contribution_receipt_length = None
+    comores_features_enabled = None
 
     def __load_config(self, cfg):
         for field in cfg:
