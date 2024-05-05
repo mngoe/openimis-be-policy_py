@@ -12,7 +12,6 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from .validations import validate_idle_policy
-from insuree.models import Family
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +41,6 @@ class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
                 _("mutation.authentication_required"))
         if not user.has_perms(perms):
             raise PermissionDenied(_("unauthorized"))
-        if PolicyConfig.comores_features_enabled:
-            if "family_id" in data:
-                family = Family.objects.filter(id=data["family_id"]).first()
-                if family:
-                    if family.family_level == "1":
-                        raise Exception("Impossible d'attribuer une police à une famille de niveau 1")
         client_mutation_id = data.get("client_mutation_id")
         errors = validate_idle_policy(data)
         if len(errors):
