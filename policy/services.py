@@ -7,12 +7,13 @@ from claim.models import ClaimService, Claim, ClaimItem
 from django import dispatch
 from django.core.exceptions import PermissionDenied
 from django.db import connection
-from django.db.models import Q, Count, Min, Max, Value
-from django.db.models import Sum, F, Case, When
+from django.db.models import Q, Count, Min, Max, Sum, F
 from django.db.models.functions import Coalesce
 from django.template import Template, Context
 from django.utils.translation import gettext as _
 from graphene.utils.str_converters import to_snake_case
+
+from policy.utils import get_queryset_valid_at_date
 from core.signals import register_service_signal
 from insuree.models import Insuree, Family, InsureePolicy
 from insuree.services import create_insuree_renewal_detail
@@ -113,11 +114,12 @@ class PolicyService:
 @core.comparable
 class ByInsureeRequest(object):
 
-    def __init__(self, chf_id, active_or_last_expired_only=False, show_history=False, order_by=None):
+    def __init__(self, chf_id, active_or_last_expired_only=False, show_history=False, order_by=None, target_date=None):
         self.chf_id = chf_id
         self.active_or_last_expired_only = active_or_last_expired_only
         self.show_history = show_history
         self.order_by = order_by
+        self.target_date = target_date
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
@@ -212,29 +214,33 @@ class FilteredPoliciesService(object):
                 ceiling_op = row.product.max_op_insuree - (row.total_rem_op if row.total_rem_op else 0)
 
         members_count = row.family.members.count()
-        threshold = row.product.threshold
+        threshold = row.product.threshold if row.product.threshold else 0
         total_rem_g = row.total_rem_g if row.total_rem_g else 0
         total_rem_ip = row.total_rem_ip if row.total_rem_ip else 0
         total_rem_op = row.total_rem_op if row.total_rem_op else 0
+        extra_member = row.product.max_policy_extra_member if row.product.max_policy_extra_member else 0
+        extra_member_ip = row.product.max_policy_extra_member_ip if row.product.max_policy_extra_member_ip else 0
+        extra_member_op = row.product.max_policy_extra_member_op if row.product.max_policy_extra_member_op else 0
+
 
         if row.product.max_policy:
             max_policy = row.product.max_policy
             if members_count > threshold:
-                max_policy += (members_count - threshold) * row.product.max_policy_extra_member
+                max_policy += (members_count - threshold) * extra_member
             ceiling = max_policy - total_rem_g
         else:
             ceiling_ip = 0
             if row.product.max_ip_policy:
                 max_ip_policy = row.product.max_ip_policy
                 if members_count > threshold:
-                    max_ip_policy += (members_count - threshold) * row.product.max_policy_extra_member_ip
+                    max_ip_policy += (members_count - threshold) * extra_member_ip
                 ceiling_ip = max_ip_policy - total_rem_ip
 
             ceiling_op = 0
             if row.product.max_op_policy:
                 max_op_policy = row.product.max_op_policy
                 if members_count > threshold:
-                    max_op_policy += (members_count - threshold) * row.product.max_policy_extra_member_op
+                    max_op_policy += (members_count - threshold) * extra_member_op
                 ceiling_op = max_op_policy - total_rem_op
 
         balance = row.value
@@ -268,10 +274,9 @@ class FilteredPoliciesService(object):
 
     def build_query(self, req):
         # TODO: prevent direct dependency on claim_ded structure?
-        res = Policy.objects \
-            .select_related('product') \
-            .select_related('officer') \
-            .prefetch_related('claim_ded_rems') \
+        res = Policy.objects\
+            .prefetch_related('product') \
+            .prefetch_related('officer') \
             .annotate(total_ded_g=Sum('claim_ded_rems__ded_g')) \
             .annotate(total_ded_ip=Sum('claim_ded_rems__ded_ip')) \
             .annotate(total_ded_op=Sum('claim_ded_rems__ded_op')) \
@@ -283,6 +288,8 @@ class FilteredPoliciesService(object):
             .annotate(total_rem_delivery=Sum('claim_ded_rems__rem_delivery')) \
             .annotate(total_rem_hospitalization=Sum('claim_ded_rems__rem_hospitalization')) \
             .annotate(total_rem_antenatal=Sum('claim_ded_rems__rem_antenatal'))
+                
+        res.query.group_by = ['id']
         if not req.show_history:
             res = res.filter(*core.filter_validity())
         if req.active_or_last_expired_only:
@@ -306,6 +313,8 @@ class ByInsureeService(FilteredPoliciesService):
         res = res.prefetch_related('insuree_policies')
         res = res.filter(insuree_policies__insuree__in=insurees)
         # .distinct('product__code') >> DISTINCT ON fields not supported by MS-SQL
+        if by_insuree_request.target_date:
+            res = get_queryset_valid_at_date(res, by_insuree_request.target_date)
         if by_insuree_request.active_or_last_expired_only:
             products = {}
             for r in res:
@@ -600,7 +609,7 @@ class NativeEligibilityService(object):
                     "policy__product_id",
                     waiting_period=F(waiting_period_field),
                     limit_no=F(limit_field)) \
-            .annotate(min_date=MonthsAdd(Coalesce(F(waiting_period_field), 0), "effective_date")) \
+            .annotate(min_date=MonthsAdd("effective_date", Coalesce(F(waiting_period_field), 0))) \
             .annotate(count=Sum(Coalesce(
                                 f"insuree__claim__{item_or_service}s__qty_approved",
                                 f'insuree__claim__{item_or_service}s__qty_provided'

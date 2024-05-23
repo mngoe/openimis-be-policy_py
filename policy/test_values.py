@@ -6,13 +6,15 @@ from product.test_helpers import create_test_product
 from insuree.models import Relation
 from .values import *
 from .test_helpers import create_test_policy
-
+from core.apps import CoreConfig
+from dateutil.relativedelta import relativedelta
 
 class PolicyValuesTestCase(TestCase):
+    test_child_dob=py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority-2)
     def test_new_policy_basis(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
         spouse = Relation.objects.get(id=8)
-        create_test_insuree(
+        create_test_insuree( with_family = False,
             custom_props={
                 "dob": core.datetime.date(1989, 9, 9),
                 "relationship": spouse,
@@ -39,9 +41,9 @@ class PolicyValuesTestCase(TestCase):
 
         # let's add a child and shift date to 1st of a month
         child = Relation.objects.get(id=4)
-        create_test_insuree(
+        create_test_insuree(with_family = False,
             custom_props={
-                "dob": core.datetime.date(2020, 2, 20),
+                "dob": self.test_child_dob,
                 "relationship": child,
                 "family": head_insuree.family
             })
@@ -56,7 +58,7 @@ class PolicyValuesTestCase(TestCase):
     def test_new_policy_lump_sum_and_cycles(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
         spouse = Relation.objects.get(id=8)
-        create_test_insuree(
+        create_test_insuree( with_family = False,
             custom_props={
                 "dob": core.datetime.date(1989, 9, 9),
                 "relationship": spouse,
@@ -89,9 +91,9 @@ class PolicyValuesTestCase(TestCase):
 
         # let's add a child (outside threshold)  and shift date in 1st cycle grace period
         child = Relation.objects.get(id=4)
-        create_test_insuree(
+        create_test_insuree( with_family = False,
             custom_props={
-                "dob": core.datetime.date(2020, 2, 20),
+                "dob": self.test_child_dob,
                 "relationship": child,
                 "family": head_insuree.family
             })
@@ -104,9 +106,9 @@ class PolicyValuesTestCase(TestCase):
         self.assertEquals(policy.value, 445)  # 200 + 1 x 200 + 3 x 10 + 3 x 5
 
     def test_new_policy_admin_period_max_members_insurance_period(self):
-        head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
+        head_insuree = create_test_insuree(with_family=True, custom_props={"chf_id":"tnpapmmip","dob": core.datetime.date(1985, 5, 5)})
         spouse = Relation.objects.get(id=8)
-        create_test_insuree(
+        create_test_insuree(with_family = False,
             custom_props={
                 "dob": core.datetime.date(1989, 9, 9),
                 "relationship": spouse,
@@ -142,13 +144,14 @@ class PolicyValuesTestCase(TestCase):
         child = Relation.objects.get(id=4)
         create_test_insuree(
             custom_props={
-                "dob": core.datetime.date(2020, 2, 20),
+                "dob": self.test_child_dob,
                 "relationship": child,
                 "family": head_insuree.family
             })
         policy = create_test_policy(product, head_insuree, custom_props={
-            "enroll_date": core.datetime.date(2021, 12, 11),
-        })
+                "enroll_date": core.datetime.date(2021, 12, 11),
+            }, check = False)
+
         policy, warnings = policy_values(policy, head_insuree.family, None)
         self.assertEquals(policy.start_date, core.datetime.date(2022, 1, 1))  # enroll + admin in cycle 1 + grace
         self.assertEquals(policy.expiry_date, core.datetime.date(2022, 6, 30))

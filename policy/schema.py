@@ -46,6 +46,7 @@ class Query(graphene.ObjectType):
         balance_gte=graphene.Float(),
         showHistory=graphene.Boolean(),
         showInactive=graphene.Boolean(),
+        confirmationType=graphene.String(),
         orderBy=graphene.List(of_type=graphene.String),
     )
     # Note:
@@ -58,6 +59,7 @@ class Query(graphene.ObjectType):
         active_or_last_expired_only=graphene.Boolean(),
         show_history=graphene.Boolean(),
         order_by=graphene.String(),
+        target_date=graphene.Date(),
     )
     policies_by_family = graphene.relay.ConnectionField(
         PolicyByFamilyOrInsureeConnection,
@@ -98,7 +100,7 @@ class Query(graphene.ObjectType):
         product = Product.objects.filter(
             Q(validity_to__isnull=True),
             Q(id=kwargs.get('product_id')) | Q(legacy_id=kwargs.get('product_id')),
-            Q(validity_from__date__lte=kwargs.get('enrollDate')),
+            Q(validity_from__date__lte=kwargs.get('enrollDate')) | Q(date_from__lte=kwargs.get('enrollDate')),
         ).order_by('-validity_from').first()
 
         if not product:
@@ -142,17 +144,19 @@ class Query(graphene.ObjectType):
                     'm_count')) - Subquery(covered_sq.values('i_count'))
             )
             query = query.filter(inactive_count__gt=0)
+        if kwargs.get('balance_lte') or kwargs.get('balance_gte') or kwargs.get('sum_premiums', False):
+            query=query.annotate(
+                sum_premiums=Policy.get_query_sum_premium()
+                )
         if kwargs.get('balance_lte') or kwargs.get('balance_gte'):
-            sum_premiums = Premium.objects.filter(is_photo_fee=False).values(
-                'policy_id').annotate(sum=Sum('amount'))
-            sum_premiums_subquery = sum_premiums.filter(
-                policy_id=OuterRef('id'))
             query = query.annotate(
-                balance=F('value') - Subquery(sum_premiums_subquery.values('sum')))
+                balance=F('value') - F('sum_premiums'))
         if kwargs.get('balance_lte'):
             query = query.filter(balance__lte=kwargs.get('balance_lte'))
         if kwargs.get('balance_gte'):
             query = query.filter(balance__gte=kwargs.get('balance_gte'))
+        if kwargs.get('confirmationType'):
+            query = query.filter(family__confirmation_type=kwargs.get('confirmationType'))
         location_id = kwargs.get('district_id') if kwargs.get(
             'district_id') else kwargs.get('region_id')
         if location_id:
@@ -200,7 +204,8 @@ class Query(graphene.ObjectType):
             active_or_last_expired_only=kwargs.get(
                 'active_or_last_expired_only', False),
             show_history=kwargs.get('show_history', False),
-            order_by=kwargs.get('order_by', None)
+            order_by=kwargs.get('order_by', None),
+            target_date=kwargs.get('target_date', None)
         )
         res = ByInsureeService(user=info.context.user).request(req)
         return [Query._to_policy_by_family_or_insuree_item(x) for x in res.items]
