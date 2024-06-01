@@ -8,8 +8,11 @@ from program import models as program_models
 def validate_idle_policy(policy_input):
     errors = []
     product_id = policy_input.get('product_id', False)
-    program_id = Product.objects.get(id=product_id).program_id
-    if program_id:
+    product = Product.objects.get(id=product_id)
+    print("Le code ", str(product.code).lower())
+    program_id = product.program_id
+    print("program_id ", program_id)
+    if program_id and str(product.code).lower() != "csu-uf":
         nameProgram = program_models.Program.objects.get(idProgram=program_id).nameProgram
         if nameProgram=='VIH':
             canSave = False
