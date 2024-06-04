@@ -10,7 +10,7 @@ def validate_idle_policy(policy_input):
     product_id = policy_input.get('product_id', False)
     product = Product.objects.get(id=product_id)
     program_id = product.program_id
-    if program_id and str(product.code).lower() != "csu-uf":
+    if program_id:
         nameProgram = program_models.Program.objects.get(idProgram=program_id).nameProgram
         if nameProgram=='VIH':
             canSave = False
@@ -22,9 +22,18 @@ def validate_idle_policy(policy_input):
                         canSave = True
                         break
             if not canSave:
-                return [{
+                # Can't save because no user is HIV unless is it a negative policy
+                if str(product.code).lower() != "csu-uf":
+                    return [{
                         'message': ("failed to create policy"),
-                        'detail': ("Cannot create an HIV policy for a patient that does not have HIV")
+                        'detail': ("Cannot create a positive HIV policy for a patient that does not have HIV")
+                    }]
+            else:
+                # We can save but we also check if its a negative or positive policy
+                if str(product.code).lower() == "csu-uf":
+                    return [{
+                        'message': ("failed to create policy"),
+                        'detail': ("Cannot create a Negative HIV policy for a patient that effectively has HIV")
                     }]
     policy_uuid = policy_input.get('uuid')
     if policy_uuid:
