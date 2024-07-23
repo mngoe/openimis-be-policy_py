@@ -8,6 +8,7 @@ from django.db import models
 from graphql import ResolveInfo
 from insuree.models import Family
 from product.models import Product
+from django.utils import timezone as django_tz 
 
 
 class Policy(core_models.VersionedModel):
@@ -32,6 +33,7 @@ class Policy(core_models.VersionedModel):
     audit_user_id = models.IntegerField(db_column='AuditUserID')
     # row_id = models.BinaryField(db_column='RowID', blank=True, null=True)
     policy_number = models.CharField(db_column='policyNumber', max_length=50, blank=True, null=True)
+    creation_date = models.DateField(db_column='creationDate', default=django_tz.now, blank=True, null=True)
 
     def sum_premiums(self, photo=False):
         return sum([p.amount for p in self.premiums.filter(is_photo_fee=photo).all()])
