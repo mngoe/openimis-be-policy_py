@@ -2,7 +2,9 @@ import uuid
 
 from core import fields
 from core import models as core_models
+from core.utils import filter_validity
 from core.models import Officer
+
 from django.conf import settings
 from django.db import models
 from graphql import ResolveInfo
@@ -35,8 +37,17 @@ class Policy(core_models.VersionedModel):
     policy_number = models.CharField(db_column='policyNumber', max_length=50, blank=True, null=True)
     creation_date = models.DateField(db_column='creationDate', default=django_tz.now, blank=True, null=True)
 
-    def sum_premiums(self, photo=False):
-        return sum([p.amount for p in self.premiums.filter(is_photo_fee=photo).all()])
+    @staticmethod
+    def get_query_sum_premium(photo=False):
+        return models.Sum(
+            'premiums__amount', 
+            filter=models.Q(*filter_validity(prefix='premiums__'),premiums__is_photo_fee=photo)
+            )
+    
+    def sum_premiums(self, photo = False):
+        return Policy.objects.filter(id=self.id).aggregate(
+                sum_premiums=Policy.get_query_sum_premium(photo)
+                )['sum_premiums'] or 0
 
     def claim_ded_rems(self):
         return self.claim_ded_rems
@@ -46,7 +57,6 @@ class Policy(core_models.VersionedModel):
 
     def can_add_insuree(self):
         return self.family.members.filter(validity_to__isnull=True).count() < self.product.max_members
-
     class Meta:
         managed = True
         db_table = 'tblPolicy'
@@ -75,6 +85,7 @@ class Policy(core_models.VersionedModel):
         #     return queryset.filter(
         #         health_facility__location_id__in=[l.location.id for l in dist]
         #     )
+        
         return queryset
 
 
@@ -102,11 +113,11 @@ class PolicyRenewal(core_models.VersionedModel):
     audit_user_id = models.IntegerField(db_column='AuditCreateUser', null=True, blank=True)
 
     class Meta:
-        managed = False
+        managed = True
         db_table = 'tblPolicyRenewals'
 
 
-class PolicyMutation(core_models.UUIDModel):
+class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
     policy = models.ForeignKey(Policy, models.DO_NOTHING,
                                  related_name='mutations')
     mutation = models.ForeignKey(
@@ -114,4 +125,4 @@ class PolicyMutation(core_models.UUIDModel):
 
     class Meta:
         managed = True
-        db_table = "location_PolicyMutation"
+        db_table = "policy_PolicyMutation"
