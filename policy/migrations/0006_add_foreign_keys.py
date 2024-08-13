@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         ('insuree', '0013_auto_20211103_1023'),
         ('core', '0019_extended_field'),
         ('product', '0006_insert_ceiling_type'),
-        ('policy', '0004_add_medical_oficer_reading_rights'),
+        ('policy', '0005_auto_20230622_1854'),
     ]
 
     operations = [
