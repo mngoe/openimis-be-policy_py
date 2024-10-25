@@ -16,7 +16,7 @@ def bind_service_signals():
 def _on_add_policy(*args, **kwargs):
     data = kwargs.get('data', None)
     if data:
-        if PolicyConfig.control_family_level:
+        if PolicyConfig.enable_polygamic_family:
             if "family_id" in data[0][0]:
                 family = Family.objects.filter(id=data[0][0]["family_id"]).first()
                 if family:

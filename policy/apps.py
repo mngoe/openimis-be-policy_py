@@ -24,7 +24,7 @@ DEFAULT_CFG = {
     "CTIVATION_OPTION_PAYMENT": 2,
     "ACTIVATION_OPTION_READY": 3,
     "contribution_receipt_length": 5,
-    "control_family_level": False
+    "enable_polygamic_family": False
 }
 
 CALCULATION_RULES = []
@@ -57,7 +57,7 @@ class PolicyConfig(AppConfig):
     ACTIVATION_OPTION_READY = None
     activation_option = None
     contribution_receipt_length = None
-    control_family_level = None
+    enable_polygamic_family = None
 
     def __load_config(self, cfg):
         for field in cfg:
