@@ -473,9 +473,8 @@ class EligibilityResponse(object):
         return self.__str__()
 
 
-signal_eligibility_service_before = dispatch.Signal(providing_args=["user", "request", "response"])
-signal_eligibility_service_after = dispatch.Signal(providing_args=["user", "request", "response"])
-
+signal_eligibility_service_before = dispatch.Signal(["user", "request", "response"])
+signal_eligibility_service_after = dispatch.Signal(["user", "request", "response"])
 
 class EligibilityService(object):
     def __init__(self, user):
