@@ -119,6 +119,7 @@ class PolicyService:
 
     @register_service_signal('policy_service.create')
     def create_policy(self, data, user):
+        print("data est: ", data)
         is_paid = data.pop("is_paid", False)
         receipt = data.pop("receipt", None)
         payer_uuid = data.pop("payer_uuid", None)
