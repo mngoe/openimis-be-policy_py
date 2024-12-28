@@ -149,7 +149,8 @@ class PolicyService:
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
         # we activate the policy immediatelly
-        if data['value'] == 0:
+        print("value is ", data['value'])
+        if int(data['value']) == 0:
             setattr(policy, "status",2)
             setattr(policy, "effective_date", data['start_date'])
         policy.save()
