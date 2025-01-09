@@ -124,14 +124,20 @@ class PolicyService:
         payer_uuid = data.pop("payer_uuid", None)
         data = self._clean_mutation_info(data)
         if PolicyConfig.one_policy_per_program == True:
+            print("OK......")
             if "product_id" in data:
                 product = Product.objects.get(id=data["product_id"])
+                print("Produit 1 ", product)
                 program = product.program
+                print("program: ", program)
                 if program:
                     for police in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
+                        print("police actuelle ", police.status)
                         if police.status == Policy.STATUS_ACTIVE:
                             prod = Product.objects.get(id=police.product.id)
+                            print("prod ", prod)
                             if prod:
+                                print("comparaison ", program.idProgram, " et ", prod.program.idProgram)
                                 if program.idProgram == prod.program.idProgram:
                                     raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme")
                                 # If the policy that the user had previously is a cheque sante,
