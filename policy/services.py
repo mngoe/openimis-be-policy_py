@@ -123,6 +123,7 @@ class PolicyService:
         receipt = data.pop("receipt", None)
         payer_uuid = data.pop("payer_uuid", None)
         data = self._clean_mutation_info(data)
+        print("Val ", PolicyConfig.one_policy_per_program)
         if PolicyConfig.one_policy_per_program == True:
             print("OK......")
             if "product_id" in data:
