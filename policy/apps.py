@@ -19,6 +19,10 @@ DEFAULT_CFG = {
     "default_eligibility_disabled": False,
     "one_policy_per_program": False,
     "activation_option": 1,
+    "ACTIVATION_OPTION_CONTRIBUTION": 1,
+    "CTIVATION_OPTION_PAYMENT": 2,
+    "ACTIVATION_OPTION_READY": 3,
+    "contribution_receipt_length": 5
 }
 
 
@@ -36,44 +40,21 @@ class PolicyConfig(AppConfig):
     gql_mutation_suspend_policies_perms = []
     one_policy_per_program = False
     gql_mutation_delete_policies_perms = []
-    policy_renewal_interval = 14
-    policy_location_via = 'family'
-    default_eligibility_disabled = False
-    ACTIVATION_OPTION_CONTRIBUTION = 1
-    ACTIVATION_OPTION_PAYMENT = 2
-    ACTIVATION_OPTION_READY = 3
-    activation_option = ACTIVATION_OPTION_CONTRIBUTION
+    policy_renewal_interval = None
+    policy_location_via = None
+    default_eligibility_disabled = None
+    ACTIVATION_OPTION_CONTRIBUTION = None
+    ACTIVATION_OPTION_PAYMENT = None
+    ACTIVATION_OPTION_READY = None
+    activation_option = None
+    contribution_receipt_length = None
 
-    def _configure_permissions(self, cfg):
-        PolicyConfig.gql_query_policies_perms = cfg["gql_query_policies_perms"]
-        PolicyConfig.gql_query_policy_officers_perms = cfg["gql_query_policy_officers_perms"]
-        PolicyConfig.gql_query_policies_by_insuree_perms = cfg["gql_query_policies_by_insuree_perms"]
-        PolicyConfig.gql_query_policies_by_family_perms = cfg["gql_query_policies_by_family_perms"]
-        PolicyConfig.gql_mutation_create_policies_perms = cfg["gql_mutation_create_policies_perms"]
-        PolicyConfig.gql_mutation_renew_policies_perms = cfg["gql_mutation_renew_policies_perms"]
-        PolicyConfig.gql_mutation_edit_policies_perms = cfg["gql_mutation_edit_policies_perms"]
-        PolicyConfig.gql_mutation_suspend_policies_perms = cfg["gql_mutation_suspend_policies_perms"]
-        PolicyConfig.one_policy_per_program = cfg["one_policy_per_program"]
-        PolicyConfig.gql_mutation_delete_policies_perms = cfg["gql_mutation_delete_policies_perms"]
-        PolicyConfig.gql_query_eligibilities_perms = cfg["gql_query_eligibilities_perms"]
-
-    def _configure_eligibility(self, cfg):
-        PolicyConfig.default_eligibility_disabled = cfg["default_eligibility_disabled"]
-
-    def _configure_renewal(self, cfg):
-        PolicyConfig.policy_renewal_interval = cfg["policy_renewal_interval"]
-
-    def _configure_location(self, cfg):
-        PolicyConfig.policy_location_via = cfg["policy_location_via"]
-
-    def _configure_activation(self, cfg):
-        PolicyConfig.activation_option = cfg["activation_option"]
+    def __load_config(self, cfg):
+        for field in cfg:
+            if hasattr(PolicyConfig, field):
+                setattr(PolicyConfig, field, cfg[field])
 
     def ready(self):
         from core.models import ModuleConfiguration
         cfg = ModuleConfiguration.get_or_default(MODULE_NAME, DEFAULT_CFG)
-        self._configure_permissions(cfg)
-        self._configure_renewal(cfg)
-        self._configure_location(cfg)
-        self._configure_eligibility(cfg)
-        self._configure_activation(cfg)
+        self.__load_config(cfg)

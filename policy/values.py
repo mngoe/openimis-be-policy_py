@@ -1,14 +1,24 @@
 from django.utils.translation import gettext as _
+from django.db.models import Q,Count
 import datetime as py_datetime
-from core.apps import CoreConfig
+from decimal import *
 from .models import Policy
+
+from core.apps import CoreConfig
+from dateutil.relativedelta import relativedelta
+from core.apps import CoreConfig
 
 
 def cycle_start(product, cycle, ref_date):
     c = getattr(product, "start_cycle_%s" % (cycle + 1), None)
     if not c:
         return None
-    start = py_datetime.datetime.strptime("%s-%s" % (c, ref_date.year), '%d-%m-%Y')
+    if CoreConfig.secondary_calendar == 'Nepal':
+        import nepali_datetime
+        nepali_start = nepali_datetime.datetime.strptime("%s-%s" % (c, nepali_datetime.date.today().year), '%d-%m-%Y')
+        start = nepali_start.to_datetime_date()
+    else:
+        start = py_datetime.datetime.strptime("%s-%s" % (c, ref_date.year), '%d-%m-%Y')
     if ref_date <= start:
         return start
 
@@ -45,8 +55,23 @@ def set_start_date(policy):
     ))
 
 
-def set_expiry_date(policy):
+def set_expiry_date(policy, family, enroll_date):
+    print("enroll_date ", enroll_date)
+    member = family.members.filter(validity_to__isnull=True).first()
+    print("Memebers ", member.dob)
+    date_format = "%Y-%m-%d"
+    today = py_datetime.datetime.strptime(str(py_datetime.datetime.now().date()), date_format)
+    insuree_dob = py_datetime.datetime.strptime(str(member.dob), date_format)
+    delta = today - insuree_dob
+    age_patient = int(round(delta.days / 365.0))
+    print("age_patient ", age_patient)
+    
     product = policy.product
+    print("Age Max sur le produit ", product.age_maximal)
+    print("Age Min sur le produit ", product.age_minimal)
+    the_date = py_datetime.datetime.strptime(
+        str(enroll_date.date()), "%Y-%m-%d").date()
+    
     from core import datetime, datetimedelta
 
     insurance_period = datetimedelta(
@@ -57,6 +82,17 @@ def set_expiry_date(policy):
             insurance_period -
             datetimedelta(days=1)
     ).to_ad_date()
+    if product.age_maximal:
+        diff = product.age_maximal - age_patient
+        if(diff < 0):
+            diff = -diff
+        print("diff ", diff)
+        from dateutil.relativedelta import relativedelta
+        exp_date = the_date + relativedelta(years=+diff)
+        print("exp_date ", exp_date)
+        policy.expiry_date = exp_date
+    else:
+        print("The product does not have the max age")
 
 
 def family_counts(product, family):
@@ -67,31 +103,47 @@ def family_counts(product, family):
     other_children = 0
     extra_children = 0
     total = 0
-    # sad, but can't get the limit inside the prefetch
-    # product.max_members is NOT NULL (but can be 0)
-    for member in family.members.all()[:product.max_members]:
-        total += 1
-        age = member.age()
-        if age >= CoreConfig.age_of_majority and member.relationship_id != 7:
-            adults += 1
-        elif age >= CoreConfig.age_of_majority:
-            other_adults += 1
-        elif member.relationship_id != 7:
-            children += 1
-        else:
-            other_children += 1
-    if product.threshold:
-        extra_adults = max(0, adults - product.threshold)
-        extra_children = max(0, children - (product.threshold - adults + extra_adults))
+    date_threshold = py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority)
+    counts= family.members.filter(
+        Q(validity_to__isnull=True),
+    ).aggregate(
+        adults=Count('id',filter=Q(Q(dob__lt=date_threshold) & ~Q(relationship_id=7))),
+        children=Count('id', filter=Q(Q(dob__gte=date_threshold) & ~Q(relationship_id=7))),
+        other_children=Count('id', filter=Q(relationship_id=7, dob__gte=date_threshold)),
+        other_adults=Count('id', filter=Q(relationship_id=7, dob__lt=date_threshold))
+    )
+    adults = counts['adults'] 
+    children =  counts['children'] 
+    other_children =  counts['other_children'] 
+    other_adults =  counts['other_adults'] 
+    
+    over_children = 0
+    over_adults = 0
+
+    if product.max_members:
+        over_adults = max(0,adults   - product.max_members)
+        over_children = max(0,adults  + children  - over_adults - product.max_members)
+        over_other_children = max(0,adults + children + other_children -over_adults -over_children- product.max_members)
+        over_other_adults = max(0,adults  + other_adults + children + other_children -over_adults - over_other_children - over_children - product.max_members)
+        
+    # remove over from count
+    children -= over_children
+    adults -= over_adults
+    other_children -= over_other_children
+    other_adults -= over_other_adults
+    if product.threshold:   
+        extra_adults = max(0, adults -   product.threshold)
+        extra_children = max(0,children + adults - extra_adults - product.threshold)
+
 
     return {
-        "adults": adults,
-        "extra_adults": extra_adults,
-        "other_adults": other_adults,
-        "children": children,
-        "extra_children": extra_children,
-        "other_children": other_children,
-        "total": total,
+        "adults":adults -extra_adults, # adult part of the "lump sum"
+        "extra_adults": extra_adults, # adult not part of the "lump sum" because of threshold
+        "other_adults": other_adults , # adult never of the "lump sum"
+        "children": children-extra_children,  # children part of the "lump sum"
+        "extra_children": extra_children, # children never part of the "lump sum" because of threshold
+        "other_children": other_children,# children never part of the "lump sum"
+        "total": adults  + other_adults + children  +  other_children,
     }
 
 
@@ -168,11 +220,11 @@ def set_value(policy, family, prev_policy):
     contributions = sum_contributions(product, f_counts)
     general_assembly = sum_general_assemblies(product, f_counts)
     registration = sum_registrations(policy, product, f_counts)
-    policy.value = contributions + general_assembly + registration
+    policy.value = Decimal(contributions + general_assembly + registration)
     discount(policy, prev_policy)
 
 
-def policy_values(policy, family, prev_policy):
+def policy_values(policy, family, prev_policy, enroll_date):
     members = family.members.filter(validity_to__isnull=True).count()
     max_members = policy.product.max_members
     above_max = max(0, members - max_members)
@@ -180,6 +232,6 @@ def policy_values(policy, family, prev_policy):
     if above_max:
         warnings.append(_("policy.validation.members_count_above_max") % {'max': max_members, 'count': members})
     set_start_date(policy)
-    set_expiry_date(policy)
+    set_expiry_date(policy, family, enroll_date)
     set_value(policy, family, prev_policy)
     return policy, warnings
