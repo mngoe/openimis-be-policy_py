@@ -130,7 +130,7 @@ class PolicyService:
                 if program:
                     for police in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
                         if program.code != "CCS":
-                            if police.status == Policy.STATUS_IDLE:
+                            if police.product.program == program and police.status == Policy.STATUS_IDLE:
                                 raise Exception("Vous ne pouvez pas avoir plusieurs polices en attente pour un même programme pour un même assuré")
                         if police.status == Policy.STATUS_ACTIVE:
                             prod = Product.objects.get(id=police.product.id)
