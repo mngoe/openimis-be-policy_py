@@ -131,6 +131,9 @@ class PolicyService:
                 program = product.program
                 if program:
                     for police in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
+                        if program.code != "CCS":
+                            if police.product.program == program and police.status == Policy.STATUS_IDLE:
+                                raise Exception("Vous ne pouvez pas avoir plusieurs polices en attente pour un même programme pour un même assuré")
                         if police.status == Policy.STATUS_ACTIVE:
                             prod = Product.objects.get(id=police.product.id)
                             if prod:
@@ -138,7 +141,6 @@ class PolicyService:
                                     raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme")
                                 # If the policy that the user had previously is a cheque sante,
                                 # he cannot have a fagep policy
-                                print("Comparaison ", prod.program.code, " et ", program.code)
                                 if prod.program.code == "CCS" and program.code == "PAL":
                                     raise Exception("L'assuré ne peux pas avoir un proegramme FAGEP"\
                                     " s'il a déja un proegramme Cheque santé actif")
@@ -1249,6 +1251,15 @@ def update_insuree_policies(policy, audit_user_id):
 
 def policy_status_premium_paid(policy, effective_date):
     if PolicyConfig.activation_option == PolicyConfig.ACTIVATION_OPTION_CONTRIBUTION:
+        # Exception for activating multiple policies  
+        program = policy.product.program
+        if program:
+            for police in Policy.objects.filter(family=policy.family).filter(validity_to__isnull=True):
+                if police.status == Policy.STATUS_ACTIVE:
+                    prod = Product.objects.get(id=police.product.id)
+                    if prod:
+                        if program.idProgram == prod.program.idProgram:
+                            raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme pour un même assuré")                      
         policy.effective_date = effective_date
         policy.status = Policy.STATUS_ACTIVE
     else:
