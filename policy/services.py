@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime as py_datetime, date as py_date
+from django.core.cache import caches
 
 import core
 from claim.models import ClaimService, Claim, ClaimItem
@@ -38,6 +39,7 @@ def reset_policy_before_update(policy):
     policy.family_id = None
     policy.officer_id = None
 
+cache = caches['coverage']
 
 class PolicyService:
     def __init__(self, user):
@@ -743,9 +745,20 @@ class NativeEligibilityService(object):
 
 
     def request(self, req, response):
-        insuree = Insuree.get_queryset(None, self.user)\
-            .filter(validity_to__isnull=True)\
-            .get(chf_id=req.chf_id)  # Will throw an exception if not found
+        def get_total_filter(category):
+            return Q(
+                insuree__claim__status__gt=Claim.STATUS_ENTERED,
+                insuree__claim__category=category,
+                *core.filter_validity(prefix="insuree__"),
+                *core.filter_validity(prefix="insuree__claim__"),
+                *core.filter_validity(prefix="insuree__claim__services__"),
+            ) & (  # Not sure this one is necessary
+                Q(insuree__claim__services__rejection_reason=0)
+                | Q(insuree__claim__services__rejection_reason__isnull=True)
+            )
+        insuree = Insuree.get_queryset(None, self.user).get(
+            chf_id=req.chf_id, *core.filter_validity()
+        )  # Will throw an exception if not found
         now = core.datetime.datetime.now()
         eligibility = response
 
@@ -767,24 +780,23 @@ class NativeEligibilityService(object):
         eligibility.min_date_item = min_date_item
         eligibility.item_left = items_left
 
-        def get_total_filter(category):
-            return (
-                Q(insuree__claim__category=category)
-                & Q(insuree__validity_to__isnull=True)  # Not sure this one is necessary
-                & Q(insuree__claim__validity_to__isnull=True)
-                & Q(insuree__claim__services__validity_to__isnull=True)
-                & Q(insuree__claim__status__gt=Claim.STATUS_ENTERED)
-                & (Q(insuree__claim__services__rejection_reason=0)
-                   | Q(insuree__claim__services__rejection_reason__isnull=True))
-            )
-
         # InsPol -> Policy -> Product -> dedrem
-        result = InsureePolicy.objects \
-            .filter(policy__product__validity_to__isnull=True) \
-            .filter(policy__validity_to__isnull=True) \
-            .filter(validity_to__isnull=True) \
-            .filter(insuree=insuree) \
-            .values("policy__product_id",
+        cached_data = cache.get(
+            f"eligibility_{insuree.family_id or insuree.id}"
+        )
+
+        print("cached_data ", cached_data) 
+        if cached_data and str(insuree.id) in cached_data:
+            result = cached_data[str(insuree.id)]
+        else:
+            result = (
+                InsureePolicy.objects.filter(
+                    insuree=insuree,
+                    *core.filter_validity(prefix="policy__product__"),
+                    *core.filter_validity(prefix="policy__"),
+                )
+                .values(
+                    "policy__product_id",
                     "policy__product__max_no_surgery",
                     "policy__product__max_amount_surgery",
                     "policy__product__max_amount_consultation",
@@ -792,35 +804,102 @@ class NativeEligibilityService(object):
                     "policy__product__max_amount_delivery",
                     "policy__product__max_amount_antenatal",
                     "policy__product__max_amount_hospitalization",
-                    ) \
-            .annotate(total_admissions=Coalesce(Count("insuree__claim",
-                                                      filter=get_total_filter(Service.CATEGORY_HOSPITALIZATION),
-                                                      distinct=True), 0)) \
-            .annotate(total_admissions_left=F("policy__product__max_no_hospitalization")
-                                            - F("total_admissions")) \
-            .annotate(total_consultations=Coalesce(Count("insuree__claim",
-                                                         filter=get_total_filter(Service.CATEGORY_CONSULTATION),
-                                                         distinct=True), 0)) \
-            .annotate(total_consultations_left=F("policy__product__max_no_consultation")
-                                               - F("total_consultations")) \
-            .annotate(total_surgeries=Coalesce(Count("insuree__claim",
-                                                     filter=get_total_filter(Service.CATEGORY_SURGERY),
-                                                     distinct=True), 0)) \
-            .annotate(total_surgeries_left=F("policy__product__max_no_surgery") - F("total_surgeries")) \
-            .annotate(total_deliveries=Coalesce(Count("insuree__claim",
-                                                      filter=get_total_filter(Service.CATEGORY_DELIVERY),
-                                                      distinct=True), 0)) \
-            .annotate(total_deliveries_left=F("policy__product__max_no_delivery") - F("total_deliveries")) \
-            .annotate(total_antenatal=Coalesce(Count("insuree__claim",
-                                                     filter=get_total_filter(Service.CATEGORY_ANTENATAL),
-                                                     distinct=True), 0)) \
-            .annotate(total_antenatal_left=F("policy__product__max_no_antenatal") - F("total_antenatal")) \
-            .annotate(total_visits=Coalesce(Count("insuree__claim",
-                                                  filter=get_total_filter(Service.CATEGORY_VISIT),
-                                                  distinct=True), 0)) \
-            .annotate(total_visits_left=F("policy__product__max_no_visits") - F("total_visits")) \
-            .order_by('-expiry_date')\
-            .first()
+                )
+                .annotate(
+                    total_admissions=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_HOSPITALIZATION),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_admissions_left=F("policy__product__max_no_hospitalization")
+                    - F("total_admissions")
+                )
+                .annotate(
+                    total_consultations=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_CONSULTATION),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_consultations_left=F("policy__product__max_no_consultation")
+                    - F("total_consultations")
+                )
+                .annotate(
+                    total_surgeries=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_SURGERY),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_surgeries_left=F("policy__product__max_no_surgery")
+                    - F("total_surgeries")
+                )
+                .annotate(
+                    total_deliveries=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_DELIVERY),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_deliveries_left=F("policy__product__max_no_delivery")
+                    - F("total_deliveries")
+                )
+                .annotate(
+                    total_antenatal=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_ANTENATAL),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_antenatal_left=F("policy__product__max_no_antenatal")
+                    - F("total_antenatal")
+                )
+                .annotate(
+                    total_visits=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_VISIT),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_visits_left=F("policy__product__max_no_visits")
+                    - F("total_visits")
+                )
+                .order_by("-expiry_date")
+                .first()
+            )
+            if not cached_data:
+                cached_data = {}
+                cached_data[str(insuree.id)] = result
+            cache.set(
+                f"eligibility_{insuree.family_id or insuree.id}",
+                result,
+                None,
+            )
 
         if result is None:
             eligibility.total_admissions_left = 0
@@ -839,50 +918,93 @@ class NativeEligibilityService(object):
             return eligibility
 
         eligibility.prod_id = result["policy__product_id"]
-        total_admissions_left = result["total_admissions_left"] \
-            if result["total_admissions_left"] is None or result["total_admissions_left"] >= 0 else 0
-        total_consultations_left = result["total_consultations_left"] \
-            if result["total_consultations_left"] is None or result["total_consultations_left"] >= 0 else 0
-        total_surgeries_left = result["total_surgeries_left"] \
-            if result["total_surgeries_left"] is None or result["total_surgeries_left"] >= 0 else 0
-        total_deliveries_left = result["total_deliveries_left"] \
-            if result["total_deliveries_left"] is None or result["total_deliveries_left"] >= 0 else 0
-        total_antenatal_left = result["total_antenatal_left"] \
-            if result["total_antenatal_left"] is None or result["total_antenatal_left"] >= 0 else 0
-        total_visits_left = result["total_visits_left"] \
-            if result["total_visits_left"] is None or result["total_visits_left"] >= 0 else 0
+        total_admissions_left = (
+            result["total_admissions_left"]
+            if result["total_admissions_left"] is None
+            or result["total_admissions_left"] >= 0
+            else 0
+        )
+        total_consultations_left = (
+            result["total_consultations_left"]
+            if result["total_consultations_left"] is None
+            or result["total_consultations_left"] >= 0
+            else 0
+        )
+        total_surgeries_left = (
+            result["total_surgeries_left"]
+            if result["total_surgeries_left"] is None
+            or result["total_surgeries_left"] >= 0
+            else 0
+        )
+        total_deliveries_left = (
+            result["total_deliveries_left"]
+            if result["total_deliveries_left"] is None
+            or result["total_deliveries_left"] >= 0
+            else 0
+        )
+        total_antenatal_left = (
+            result["total_antenatal_left"]
+            if result["total_antenatal_left"] is None
+            or result["total_antenatal_left"] >= 0
+            else 0
+        )
+        total_visits_left = (
+            result["total_visits_left"]
+            if result["total_visits_left"] is None or result["total_visits_left"] >= 0
+            else 0
+        )
 
         eligibility.surgery_amount_left = result["policy__product__max_amount_surgery"]
-        eligibility.consultation_amount_left = result["policy__product__max_amount_consultation"]
-        eligibility.delivery_amount_left = result["policy__product__max_amount_delivery"]
-        eligibility.antenatal_amount_left = result["policy__product__max_amount_antenatal"]
-        eligibility.hospitalization_amount_left = result["policy__product__max_amount_hospitalization"]
+        eligibility.consultation_amount_left = result[
+            "policy__product__max_amount_consultation"
+        ]
+        eligibility.delivery_amount_left = result[
+            "policy__product__max_amount_delivery"
+        ]
+        eligibility.antenatal_amount_left = result[
+            "policy__product__max_amount_antenatal"
+        ]
+        eligibility.hospitalization_amount_left = result[
+            "policy__product__max_amount_hospitalization"
+        ]
 
         if service:
             if service.category == Service.CATEGORY_SURGERY:
-                if total_surgeries_left == 0 \
-                        or services_left == 0 \
-                        or (min_date_service and min_date_service > now) \
-                        or (result["policy__product__max_amount_surgery"] is not None
-                            and result["policy__product__max_amount_surgery"] <= 0):
+                if (
+                    total_surgeries_left == 0
+                    or services_left == 0
+                    or (min_date_service and min_date_service > now)
+                    or (
+                        result["policy__product__max_amount_surgery"] is not None
+                        and result["policy__product__max_amount_surgery"] <= 0
+                    )
+                ):
                     eligibility.is_service_ok = False
                 else:
                     eligibility.is_service_ok = True
             elif service.category == Service.CATEGORY_CONSULTATION:
-                if total_consultations_left == 0 \
-                        or services_left == 0 \
-                        or (min_date_service and min_date_service > now) \
-                        or (result["policy__product__max_amount_consultation"] is not None
-                            and result["policy__product__max_amount_consultation"] <= 0):
+                if (
+                    total_consultations_left == 0
+                    or services_left == 0
+                    or (min_date_service and min_date_service > now)
+                    or (
+                        result["policy__product__max_amount_consultation"] is not None
+                        and result["policy__product__max_amount_consultation"] <= 0
+                    )
+                ):
                     eligibility.is_service_ok = False
                 else:
                     eligibility.is_service_ok = True
             elif service.category == Service.CATEGORY_DELIVERY:
-                if total_deliveries_left == 0 \
-                        or services_left == 0 \
-                        or (min_date_service and min_date_service > now) \
-                        or (result["policy__product__max_amount_delivery"] is not None
-                            and result["policy__product__max_amount_delivery"] <= 0):
+                if (
+                    total_deliveries_left == 0
+                    or services_left == 0
+                    or (min_date_service and min_date_service > now)
+                    or (
+                        result["policy__product__max_amount_delivery"] is not None
+                        and result["policy__product__max_amount_delivery"] <= 0
+                    )
+                ):
                     eligibility.is_service_ok = False
                 else:
                     eligibility.is_service_ok = True

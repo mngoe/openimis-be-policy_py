@@ -15,7 +15,7 @@ from django.utils.translation import gettext as _
 import graphene_django_optimizer as gql_optimizer
 from graphene_django.filter import DjangoFilterConnectionField
 from core.models import Officer
-from .models import PolicyMutation
+from .models import PolicyMutation, Policy
 from product.models import Product
 from contribution.models import Premium
 from insuree.models import Family, Insuree, InsureePolicy
@@ -23,9 +23,21 @@ from django.db.models import OuterRef, Subquery, Sum, F, Count
 from location.apps import LocationConfig
 
 # We do need all queries and mutations in the namespace here.
-from .gql_queries import *  # lgtm [py/polluting-import]
-from .gql_mutations import *  # lgtm [py/polluting-import]
-
+from .gql_queries import (
+    EligibilityGQLType,
+    PolicyByFamilyOrInsureeGQLType,
+    PolicyAndWarningsGQLType,
+    PolicyGQLType,
+    OfficerGQLType,
+    PolicyByFamilyOrInsureeConnection,
+)  # lgtm [py/polluting-import]
+from .gql_mutations import (
+    CreatePolicyMutation,
+    UpdatePolicyMutation,
+    DeletePoliciesMutation,
+    RenewPolicyMutation,
+    SuspendPoliciesMutation
+)
 from .values import policy_values
 
 
