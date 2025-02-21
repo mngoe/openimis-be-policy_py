@@ -143,15 +143,15 @@ class PolicyRenewalMutation(core_models.UUIDModel, core_models.ObjectMutation):
         managed = True
         db_table = "policy_renewal_PolicyMutation"
 
-# if "claim" in sys.modules:
-#     from claim.models import Claim
+if "claim" in sys.modules:
+    from claim.models import Claim
 
-#     @receiver(post_save, sender=Claim)
-#     @receiver(post_delete, sender=Claim)
-#     def clean_enquire_cache_claim(sender, instance, *args, **kwagrs):
-#         cache.delete(
-#             f"eligibility_{instance.insuree.family_id or instance.insuree.id}"
-#         )
+    @receiver(post_save, sender=Claim)
+    @receiver(post_delete, sender=Claim)
+    def clean_enquire_cache_claim(sender, instance, *args, **kwagrs):
+        cache.delete(
+            f"eligibility_{instance.insuree.family_id or instance.insuree.id}"
+        )
 
 @receiver(post_save, sender=Product)
 @receiver(post_delete, sender=Product)
