@@ -3,6 +3,7 @@ from core.schema import (
     OrderedDjangoFilterConnectionField,
     signal_mutation_module_validate,
 )
+from core.utils import filter_validity
 import graphene
 from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch
