@@ -8,7 +8,7 @@ import django.utils.timezone
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('policy', '0005_auto_20230622_1854'),
+        ('policy', '0006_add_foreign_keys'),
     ]
 
     operations = [
