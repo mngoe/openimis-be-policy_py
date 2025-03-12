@@ -5,6 +5,9 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
 
+    dependencies = [
+        ('policy', '0007_fix_policy_mutation_name'),
+    ]
 
     operations = [
         migrations.RunSQL(
