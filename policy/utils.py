@@ -69,19 +69,19 @@ def parse_excel_bdc(file):
 
         try:
             date = row[2]
-            montant_raw = row[4]
+            amount_raw = row[4]
 
             # Convertir le montant (gestion du format "2.000,50")
-            montant_str = str(montant_raw).replace(",", ".").replace(" ", "")
-            montant = Decimal(montant_str)
+            amount_str = str(amount_raw).replace(",", ".").replace(" ", "")
+            amount = Decimal(amount_str)
 
-            if montant > 0:
+            if amount > 0:
                 transactions.append({
                     "date": str(date),
                     "description": row[5],
-                    "montant": str(montant),
+                    "amount": str(amount),
                 })
-                total_kmf += montant
+                total_kmf += amount
         except Exception as e:
             print(f"Erreur à la ligne {row_idx}: {row} - {e}")
             continue
@@ -125,7 +125,7 @@ def parse_excel_exim(file):
                     transactions.append({
                         "date": str(row[date_idx]),
                         "description": row[desc_idx],
-                        "montant": str(Decimal(credit_val)),
+                        "amount": str(Decimal(credit_val)),
                     })
                     total_kmf += Decimal(credit_val)
             except Exception as e:
