@@ -12,6 +12,7 @@ from insuree.models import Family
 from product.models import Product
 from contribution_plan.models import ContributionPlan
 from django.utils import timezone as django_tz
+from core.models import InteractiveUser
 
 class Policy(core_models.VersionedModel):
     id = models.AutoField(db_column='PolicyID', primary_key=True)
@@ -153,3 +154,16 @@ class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
     class Meta:
         managed = True
         db_table = "policy_PolicyMutation"
+
+
+class BankImport(models.Model):
+    """ Class Bank Import :
+    Class for importation of bank extract in the system
+    """
+    idBankImport = models.AutoField(primary_key=True)
+    importDate = models.DateTimeField(default=django_tz.now)
+    user = models.ForeignKey(InteractiveUser, on_delete=models.DO_NOTHING, db_column="UserID")
+    stored_file = models.FileField(upload_to="bankImports/%Y/%m/", null=True, blank=True)
+
+    class Meta:
+        db_table = "tblBankImport"
