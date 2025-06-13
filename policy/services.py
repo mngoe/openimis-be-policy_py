@@ -150,6 +150,8 @@ class PolicyService:
                         family_amount = Decimal(result_signal[0][1])
                         logger.warning("family_amount %s ", family_amount)
                 policy.value = family_amount
+                if family_amount == 0:
+                    policy.status = Policy.STATUS_ACTIVE
                 policy.save()
                 logger.warning("date_valid_from of the contribution %s",
                                contribution_plan.date_valid_from)
