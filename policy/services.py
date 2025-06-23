@@ -70,6 +70,44 @@ class PolicyService:
             raise ValidationError({
                 'payment_day': "policy.payment_day_required_if_signed"
             })
+            
+        # Codes périodicité minimale requise
+        MIN_PERIODICITY_BY_PLAN_CODE = {
+            "AMOG": "M",
+            "AMOE": "M",
+            "AMOS": "M",
+            "AMOS1": "Q",
+            "AMOS2": "Q",
+            "AMOS3": "Q",
+            "AMOS4": "Q",
+            "AMS": "Y",
+        }
+        
+        PERIODICITY_ORDER = { "M": 1, "Q": 2, "S": 3, "Y": 4 }
+
+        plan_id = data.get("contribution_plan_id")
+
+        if plan_id:
+            try:
+                plan = ContributionPlan.objects.get(id=plan_id, is_deleted=False)
+            except ContributionPlan.DoesNotExist:
+                raise ValidationError(_("policy.invalid_contribution_plan"))
+
+            plan_code = plan.code
+            required_periodicity = MIN_PERIODICITY_BY_PLAN_CODE.get(plan_code)
+
+            if not required_periodicity:
+                raise ValidationError(_("policy.unknown_required_periodicity_for_plan") % {"code": plan_code})
+
+            policy_periodicity = data.get("periodicity")
+            if not policy_periodicity:
+                raise ValidationError({"periodicity": _("policy.periodicity_required")})
+
+            if (PERIODICITY_ORDER.get(policy_periodicity) or 0) < (PERIODICITY_ORDER.get(required_periodicity) or 0):
+                raise ValidationError({
+                    "periodicity": _("policy.periodicity_below_min_for_plan")
+                })
+            
         if policy_uuid:
             return self.update_policy(data, user)
         else:

@@ -74,3 +74,15 @@ msgstr "Periodicity is required when a signature date is provided."
 
 msgid "policy.payment_day_required_if_signed"
 msgstr "Payment day is required when a signature date is provided."
+
+msgid "policy.invalid_contribution_plan"
+msgstr "Invalid contribution plan selected."
+
+msgid "policy.unknown_required_periodicity_for_plan"
+msgstr "Unknown required periodicity for the contribution plan %(code)s"
+
+msgid "policy.periodicity_required"
+msgstr "Periodicity is required to validate the policy."
+
+msgid "policy.periodicity_below_min_for_plan"
+msgstr "The selected periodicity is lower than required by the contribution plan."
