@@ -50,7 +50,13 @@ class PolicyGQLType(DjangoObjectType):
             **prefix_filterset("officer__", OfficerGQLType._meta.filter_fields),
         }
         connection_class = ExtendedConnection
-
+    
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        # Prevent duplicate Policy records when filtering by chfId through
+        # insuree_policies__insuree__chf_id. This type of filter creates a JOIN
+        # that can return multiple rows per Policy if multiple InsureePolicies exist.
+        return queryset.distinct()
 
 class PolicyAndWarningsGQLType(graphene.ObjectType):
     policy = graphene.Field(PolicyGQLType)
