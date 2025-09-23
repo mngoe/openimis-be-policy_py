@@ -106,7 +106,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             with_family=False, custom_props={"family": cls.insuree.family}
         )
         cls.test_officer = create_test_officer(villages = [cls.test_village])
-        
 
     def test_insuree_policy_query(self):
 
@@ -137,7 +136,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
 
         # Add some more asserts if you like
         ...
-        
 
     def test_query_not_insured_family_member(self):
         response = self.query(
@@ -171,7 +169,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertResponseNoErrors(response)
         self.assertEqual(content["data"]["policiesByInsuree"]["totalCount"], 0)
 
-
     def test_query_with_variables(self):
         response = self.query(
             """
@@ -203,7 +200,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         # This validates the status code and if you get errors
         self.assertResponseNoErrors(response)
         self.assertEqual(content["data"]["policiesByInsuree"]["totalCount"], 2)
-
 
     def test_query_with_variables_2(self):
         response = self.query(
@@ -239,7 +235,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             ),
             UUID(self.policy.uuid),
         )
-
 
     def test_query_with_variables_3(self):
         response = self.query(
@@ -278,7 +273,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             ),
             UUID(self.policy.uuid),
         )
-        
 
     def test_family_query_with_variables(self):
         response = self.query(
@@ -314,7 +308,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             UUID(content["data"]["policiesByFamily"]["edges"][0]["node"]["policyUuid"]),
             UUID(self.policy.uuid),
         )
-
 
     def test_insuree_policy_query(self):
 
@@ -355,7 +348,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
 
         # Add some more asserts if you like
         ...
-        
 
     def test_mutation_simple(self):
         muuid = "203327cd-501e-41e1-a026-ed742e360081"
@@ -386,7 +378,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         )
         content = self.get_mutation_result(muuid, self.admin_token)
         
-
     def test_insuree_policy_value_query(self):
 
         response = self.query(
