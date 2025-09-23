@@ -18,9 +18,8 @@ from graphene_django.filter import DjangoFilterConnectionField
 from core.models import Officer
 from .models import PolicyMutation, Policy
 from product.models import Product
-from contribution.models import Premium
 from insuree.models import Family, Insuree, InsureePolicy
-from django.db.models import OuterRef, Subquery, Sum, F, Count
+from django.db.models import OuterRef, Subquery, F, Count
 from location.apps import LocationConfig
 
 # We do need all queries and mutations in the namespace here.
@@ -143,7 +142,13 @@ class Query(graphene.ObjectType):
         prev_policy = None
         if 'prev_uuid' in kwargs:
             prev_policy = Policy.objects.get(uuid=kwargs.get('prev_uuid'))
-        policy, warnings = policy_values(policy, family, prev_policy, kwargs.get('enrollDate'))
+        policy, warnings = policy_values(
+            policy,
+            family,
+            prev_policy,
+            info.context.user,
+            kwargs.get('enrollDate')
+        )
         return PolicyAndWarningsGQLType(policy=policy, warnings=warnings)
 
     def resolve_policies(self, info, **kwargs):
@@ -347,6 +352,7 @@ class Query(graphene.ObjectType):
             return False
         else:
             return True
+
 
 class Mutation(graphene.ObjectType):
     create_policy = CreatePolicyMutation.Field()

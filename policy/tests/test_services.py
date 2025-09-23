@@ -20,7 +20,6 @@ from medical_pricelist.test_helpers import (
     add_service_to_hf_pricelist,
     add_item_to_hf_pricelist,
 )
-from insuree.test_helpers import create_test_insuree
 from policy.test_helpers import create_test_policy2, create_test_insuree_for_policy
 from product.test_helpers import (
     create_test_product,
@@ -38,11 +37,12 @@ from medical_pricelist.test_helpers import (
     create_test_service_pricelist,
 )
 from claim.services import processing_claim
-
+from core.test_helpers import create_test_interactive_user
 from django.db import connection
 
 
 class EligibilityServiceTestCase(TestCase):
+
     def setUp(self) -> None:
         super(EligibilityServiceTestCase, self).setUp()
         self.user = mock.Mock(is_anonymous=False)
@@ -51,8 +51,11 @@ class EligibilityServiceTestCase(TestCase):
         self.test_location = create_test_village()
         self.hf_spl = create_test_service_pricelist(self.test_location.id)
         self.hf_ipl = create_test_item_pricelist(self.test_location.id)
-        self.test_hf = create_test_health_facility("TEST_HF1", location_id=self.test_location.id, custom_props={'services_pricelist': self.hf_spl, 'items_pricelist': self.hf_ipl}, valid=True)
-        
+        self.test_hf = create_test_health_facility(
+            "TEST_HF1", location_id=self.test_location.id,
+            custom_props={'services_pricelist': self.hf_spl, 'items_pricelist': self.hf_ipl},
+            valid=True
+        )
 
     def test_eligibility_request_permission_denied(self):
         with mock.patch("django.db.backends.utils.CursorWrapper") as mock_cursor:
@@ -154,7 +157,6 @@ class EligibilityServiceTestCase(TestCase):
         )
         self.assertEquals(expected, res)
 
-
     def test_eligibility_stored_proc_serv(self):
         if not connection.vendor == "mssql":
             self.skipTest("This test can only be executed for MSSQL database")
@@ -167,7 +169,6 @@ class EligibilityServiceTestCase(TestCase):
         ]:
             with self.subTest(category=category):
                 self.eligibility_serv(category)
-
 
     def eligibility_serv(self, category):
         insuree, family = create_test_insuree_for_policy(
@@ -217,7 +218,6 @@ class EligibilityServiceTestCase(TestCase):
         native_response = native_el_svc.request(req, EligibilityResponse(req))
         self.assertIsNotNone(native_response)
         self.assertEquals(native_response, expected_resposnse)
-
 
     def test_eligibility_item(self):
         insuree, family = create_test_insuree_for_policy()
@@ -270,7 +270,6 @@ class EligibilityServiceTestCase(TestCase):
         self.assertIsNotNone(native_response)
         self.assertEquals(native_response, expected_resposnse)
 
-
     def test_eligibility_by_insuree(self):
         insuree, family = create_test_insuree_for_policy()
         product = create_test_product("ELI1")
@@ -289,7 +288,7 @@ class EligibilityServiceTestCase(TestCase):
         claim_item = create_test_claimitem(
             claim, "A", custom_props={"item_id": item.id}
         )
-  
+
         errors = processing_claim(claim, self.user, True)
         self.assertEqual(len(errors), 0)
 
@@ -323,7 +322,6 @@ class EligibilityServiceTestCase(TestCase):
         self.assertIsNotNone(native_response)
         self.assertEquals(native_response, expected_resposnse)
 
-
     @skip(
         "Not sure what is the proper behaviour when an IP is not present, skipping for now so that the main case"
         "can be fixed."
@@ -352,14 +350,9 @@ class EligibilityServiceTestCase(TestCase):
         self.assertIsNotNone(sp_response)
         self.assertEquals(native_response, sp_response)
 
-
     def test_eligibility_signal(self):
 
         insuree, family = create_test_insuree_for_policy()
-        # spl = create_test_service_pricelist(location_id=family.location.parent.id)
-        # ipl = create_test_item_pricelist(location_id=family.location.parent.id)
-        # hf =create_test_health_facility(code= 'tst-18', location_id=family.location.parent.id,  custom_props={'id':18, 'items_pricelist': ipl, 'services_pricelist': spl })
-
         product = create_test_product("ELI1")
         (policy, insuree_policy) = create_test_policy2(product, insuree)
         item = create_test_item("A")
@@ -378,7 +371,6 @@ class EligibilityServiceTestCase(TestCase):
         )
         errors = processing_claim(claim, self.user, True)
         self.assertEqual(len(errors), 0)
-
 
         def signal_before(sender, **kwargs):
             kwargs["response"].final = True
@@ -410,6 +402,7 @@ class RenewalsTestCase(TestCase):
 
         self.item_1 = create_test_item("D")
 
+        self.user_policy = create_test_interactive_user(username="tesAdmin")
 
     def test_insert_renewals(self):
         # Given
@@ -444,7 +437,6 @@ class RenewalsTestCase(TestCase):
         should_not_renew = renewals.filter(policy=policy_not_expiring).first()
         self.assertIsNone(should_not_renew)
 
-
     def test_update_renewals(self):
         # Given
         from core import datetime, datetimedelta
@@ -476,7 +468,6 @@ class RenewalsTestCase(TestCase):
 
         self.assertEquals(policy_expiring.status, Policy.STATUS_EXPIRED)
         self.assertEquals(policy_not_expired_yet.status, Policy.STATUS_ACTIVE)
-
 
     def test_renewals_sms(self):
         # Given
@@ -535,7 +526,6 @@ class RenewalsTestCase(TestCase):
         self.assertIn(family.location.parent.name, officer_sms[0].sms_message)
         self.assertIn(family.location.parent.parent.name, officer_sms[0].sms_message)
         self.assertIn("Test product VISIT", officer_sms[0].sms_message)
-
 
     def test_insert_renewal_details(self):
         # Given
@@ -604,3 +594,38 @@ class RenewalsTestCase(TestCase):
         self.assertTrue(
             f"HOF\n{insuree_oldpic.chf_id}\nTest Last First Second\n\n" in old_sms[0]
         )
+
+    def test_update_or_create(self):
+        import datetime
+        insuree, family = create_test_insuree_for_policy(
+            custom_props={"chf_id": "TESTCHFSMS", "phone": "+33644444719"},
+            family_custom_props={"location_id": 62},
+        )
+        product = create_test_product("VISIT", custom_props={"age_minimal":1})
+        officer = create_test_officer(custom_props={"phone": "+32444444444", "phone_communication": True})
+        data = {
+            "enroll_date": datetime.datetime.strptime("2024-02-13", "%Y-%m-%d").date(),
+            "start_date": datetime.datetime.strptime("2024-02-13", "%Y-%m-%d").date(),
+            "expiry_date": datetime.datetime.strptime("2024-02-13", "%Y-%m-%d").date(),
+            "value": "0",
+            "product_id": product.id,
+            "family_id": family.id,
+            "officer_id": officer.id,
+            "audit_user_id": self.user_policy.id_for_audit
+        }
+        policy_service = PolicyService(user=self.user_policy)
+        policy = policy_service.update_or_create(data=data, user=self.user_policy)
+        # No problem, the policy should be created
+        self.assertGreater(policy.id, 0)
+
+        # Let's change the min age so that it should be greater than the insuree's age
+        product2 = create_test_product("VISIT", custom_props={"age_minimal": 70})
+        data["product_id"] = product2.id
+        with self.assertRaises(Exception):
+            policy_service.update_or_create(data=data, user=self.user_policy)
+
+        # Let's change back the min age and set the max age now
+        product3 = create_test_product("VISIT", custom_props={"age_minimal": 1, "age_maximal": 25})
+        data["product_id"] = product3.id
+        with self.assertRaises(Exception):
+            policy_service.update_or_create(data=data, user=self.user_policy)

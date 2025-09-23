@@ -2,9 +2,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime as py_datetime, date as py_date
 from django.core.cache import caches
-
 import core
-from claim.models import ClaimService, Claim, ClaimItem
+from claim.models import Claim, ClaimItem
 from django import dispatch
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import connection
@@ -13,17 +12,13 @@ from django.db.models.functions import Coalesce
 from django.template import Template, Context
 from django.utils.translation import gettext as _
 from graphene.utils.str_converters import to_snake_case
-
-from policy.utils import get_queryset_valid_at_date
 from core.signals import register_service_signal
-from insuree.models import Insuree, Family, InsureePolicy
+from insuree.models import Insuree, InsureePolicy
 from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.utils import MonthsAdd
 from product.models import Product
-import json, requests
-
 from .models import Policy, PolicyRenewal
 from cs.models import ChequeImportLine
 
@@ -40,6 +35,7 @@ def reset_policy_before_update(policy):
     policy.officer_id = None
 
 cache = caches['coverage']
+
 
 class PolicyService:
     def __init__(self, user):
@@ -70,14 +66,20 @@ class PolicyService:
             if product.age_minimal:
                 if(age_patient < product.age_minimal):
                     # The insuree's age is lower than the min age
-                    raise Exception("L'assuré(e) avec l'age %s n'a pas encore l'age minimal requis renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_minimal)))
+                    raise Exception(
+                        f"L'assuré(e) avec l'âge {age_patient} n'a pas encore l'âge minimal requis "
+                        f"renseigné sur le produit qui est de {product.age_minimal}"
+                    )
             if product.age_maximal:
                 diff = product.age_maximal - age_patient
                 print("diff ", diff)
                 if(diff < 0):
                     # The insuree's age is greater than the max age
-                    raise Exception("L'assuré(e) avec l'age %s a dépassé(e) l'age maximal renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_maximal)))
-                from dateutil.relativedelta import relativedelta
+                    raise Exception(
+                        f"L'assuré(e) avec l'âge {age_patient} a dépassé(e) l'âge maximal "
+                        f"renseigné sur le produit qui est de {product.age_maximal}"
+                    )
+                # from dateutil.relativedelta import relativedelta
                 # exp_date = the_date + relativedelta(years=+diff)
                 # print("exp_date ", exp_date)
                 # data["expiry_date"] = exp_date
@@ -95,7 +97,10 @@ class PolicyService:
                 print("errors ", errors)
                 if len(errors):
                     raise Exception((errors[0]["message"]))
-                cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number, chequeImportLineStatus='new')
+                cheques = ChequeImportLine.objects.filter(
+                    chequeImportLineCode=policy_number,
+                    chequeImportLineStatus='new'
+                )
                 print("cheques ", cheques)
                 if cheques:
                     current_cheque = cheques[0]
@@ -133,7 +138,10 @@ class PolicyService:
                     for police in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
                         if program.code != "CCS":
                             if police.product.program == program and police.status == Policy.STATUS_IDLE:
-                                raise Exception("Vous ne pouvez pas avoir plusieurs polices en attente pour un même programme pour un même assuré")
+                                raise Exception(
+                                    "Vous ne pouvez pas avoir plusieurs polices en attente "
+                                    "pour un même programme pour un même assuré"
+                                    )
                         if police.status == Policy.STATUS_ACTIVE:
                             prod = Product.objects.get(id=police.product.id)
                             if prod:
