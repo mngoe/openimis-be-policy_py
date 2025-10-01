@@ -36,7 +36,6 @@ from medical_pricelist.test_helpers import (
     create_test_item_pricelist,
     create_test_service_pricelist,
 )
-from claim.services import processing_claim
 from core.test_helpers import create_test_interactive_user
 from django.db import connection
 
@@ -220,24 +219,19 @@ class EligibilityServiceTestCase(TestCase):
         self.assertEquals(native_response, expected_resposnse)
 
     def test_eligibility_item(self):
+        if not connection.vendor == "mssql":
+            self.skipTest("This test can only be executed for MSSQL database")
         insuree, family = create_test_insuree_for_policy()
         product = create_test_product("ELI1")
         (policy, insuree_policy) = create_test_policy2(product, insuree)
-        item = create_test_item("D")
-        
-        product_item = create_test_product_item(
-            product, item, custom_props={"limit_no_adult": 12}
-        )
-        claim = create_test_claim(
-            custom_props={
-                "insuree_id": insuree.id, "health_facility_id": self.test_hf.id
-                }
-            )
-        item_pl_detail = add_item_to_hf_pricelist(item, hf_id=self.test_hf.id)
-        claim_item = create_test_claimitem(
-            claim, "D", custom_props={"item_id": item.id}, product=product
-        )
-        errors = processing_claim(claim, self.user, True)
+        item = create_test_item("A")
+        item_pl_detail = add_item_to_hf_pricelist(item)
+        product_item = create_test_product_item(product, item, custom_props={"limit_no_adult": 12})
+        claim = create_test_claim(custom_props={"insuree_id": insuree.id})
+        claim_item = create_test_claimitem(claim, "A", custom_props={"item_id": item.id})
+        errors = validate_claim(claim, True)
+        errors += validate_assign_prod_to_claimitems_and_services(claim)
+        errors += process_dedrem(claim, -1, True)
         self.assertEqual(len(errors), 0)
 
         native_el_svc = NativeEligibilityService(self.user)
@@ -271,25 +265,19 @@ class EligibilityServiceTestCase(TestCase):
         self.assertEquals(native_response, expected_resposnse)
 
     def test_eligibility_by_insuree(self):
+        if not connection.vendor == "mssql":
+            self.skipTest("This test can only be executed for MSSQL database")
         insuree, family = create_test_insuree_for_policy()
         product = create_test_product("ELI1")
         (policy, insuree_policy) = create_test_policy2(product, insuree)
         item = create_test_item("A")
-        
-        product_item = create_test_product_item(
-            product, item, custom_props={"limit_no_adult": 12}
-        )
-        claim = create_test_claim(
-            custom_props={
-                "insuree_id": insuree.id, "health_facility_id": self.test_hf.id
-            }
-        )
-        item_pl_detail = add_item_to_hf_pricelist(item, hf_id=self.test_hf.id)
-        claim_item = create_test_claimitem(
-            claim, "A", custom_props={"item_id": item.id}
-        )
-
-        errors = processing_claim(claim, self.user, True)
+        item_pl_detail = add_item_to_hf_pricelist(item)
+        product_item = create_test_product_item(product, item, custom_props={"limit_no_adult": 12})
+        claim = create_test_claim(custom_props={"insuree_id": insuree.id})
+        claim_item = create_test_claimitem(claim, "A", custom_props={"item_id": item.id})
+        errors = validate_claim(claim, True)
+        errors += validate_assign_prod_to_claimitems_and_services(claim)
+        errors += process_dedrem(claim, -1, True)
         self.assertEqual(len(errors), 0)
 
         native_el_svc = NativeEligibilityService(self.user)
@@ -356,20 +344,19 @@ class EligibilityServiceTestCase(TestCase):
         product = create_test_product("ELI1")
         (policy, insuree_policy) = create_test_policy2(product, insuree)
         item = create_test_item("A")
-        
+        item_pl_detail = add_item_to_hf_pricelist(item, hf_id=self.test_hf.id)
         product_item = create_test_product_item(
-            product, item
+            product, item, custom_props={"limit_no_adult": 12}
         )
         claim = create_test_claim(
-            custom_props={
-                "insuree_id": insuree.id, "date_to": None, "health_facility_id": self.test_hf.id
-            }
+            custom_props={"insuree_id": insuree.id, "date_to": None, "health_facility_id":self.test_hf.id}
         )
-        item_pl_detail = add_item_to_hf_pricelist(item, hf_id=self.test_hf.id)
         claim_item = create_test_claimitem(
             claim, "A", custom_props={"item_id": item.id}
         )
-        errors = processing_claim(claim, self.user, True)
+        errors = validate_claim(claim, True)
+        errors += validate_assign_prod_to_claimitems_and_services(claim)
+        errors += process_dedrem(claim, -1, True)
         self.assertEqual(len(errors), 0)
 
         def signal_before(sender, **kwargs):
