@@ -266,7 +266,8 @@ class PolicyService:
                         if family.head_insuree:
                             existing_invoices = Invoice.objects.filter(
                                 subject_id=family.head_insuree.id,
-                                date_valid_from__date__gte=date_due.date()
+                                date_valid_from__date__gte=date_due.date(),
+                                is_deleted=False
                             )
                         logger.warning("existing invoices %s ",
                                         existing_invoices)
@@ -1324,6 +1325,7 @@ HOF{% endif %}
 
 
 def update_insuree_policies(policy, audit_user_id):
+    print("Membres ", policy.family.members.filter(validity_to__isnull=True))
     for member in policy.family.members.filter(validity_to__isnull=True):
         existing_ip = InsureePolicy.objects.filter(validity_to__isnull=True, insuree=member, policy=policy).first()
         if existing_ip:
