@@ -153,7 +153,8 @@ class PolicyService:
         logger.warning("Config for invoice generation %s",
                     PolicyConfig.generate_invoice_on_policy)
         family = Family.objects.filter(id=data["family_id"]).first()
-        if PolicyConfig.generate_invoice_on_policy:
+        if PolicyConfig.generate_invoice_on_policy and\
+            data.get("signature_date", False):
             family_amount = 0
             government_amount = 0
             contribution_plan = ContributionPlan.objects.filter(
