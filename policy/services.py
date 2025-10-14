@@ -153,7 +153,8 @@ class PolicyService:
         logger.warning("Config for invoice generation %s",
                     PolicyConfig.generate_invoice_on_policy)
         family = Family.objects.filter(id=data["family_id"]).first()
-        if PolicyConfig.generate_invoice_on_policy:
+        if PolicyConfig.generate_invoice_on_policy and\
+            data.get("signature_date", False):
             family_amount = 0
             government_amount = 0
             contribution_plan = ContributionPlan.objects.filter(
@@ -187,7 +188,15 @@ class PolicyService:
                     if result_signal[0][1]:
                         family_amount = Decimal(result_signal[0][1])
                         logger.warning("family_amount %s ", family_amount)
-                policy.value = family_amount
+                policy_amount = family_amount
+                if data["periodicity"]:
+                    if data["periodicity"] == 'Q':
+                        policy_amount = policy_amount * 3
+                    if data["periodicity"] == 'S':
+                        policy_amount = policy_amount * 6
+                    if data["periodicity"] == 'Y':
+                        policy_amount = policy_amount * 12
+                policy.value = policy_amount
                 if family_amount == 0:
                     policy.status = Policy.STATUS_ACTIVE
                 policy.save()
