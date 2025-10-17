@@ -76,10 +76,10 @@ class PolicyService:
             "AMOG": "M",
             "AMOE": "M",
             "AMOS": "M",
-            "AMOS1": "Q",
-            "AMOS2": "Q",
-            "AMOS3": "Q",
-            "AMOS4": "Q",
+            "AMOS1": "M",
+            "AMOS2": "M",
+            "AMOS3": "M",
+            "AMOS4": "M",
             "AMS": "Y",
         }
         
