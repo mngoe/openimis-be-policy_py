@@ -28,6 +28,8 @@ def get_policies_for_renewal(interval=None, region=None, district=None, ward=Non
     """
     start = time.time()
     logger.debug("debut du cron!!!!!")
+    logger.info("debut du cron!!!!!")
+    print("debut du cron!!!!!")
     for item in [region, district, ward, village]:
         if item:
             location = item
@@ -41,6 +43,8 @@ def get_policies_for_renewal(interval=None, region=None, district=None, ward=Non
         send_sms(sms)
     elapsed = time.time() - start
     logger.debug(" FIN DU CRON  Durée totale : %.2f secondes", elapsed)
+    logger.info(" FIN DU CRON  Durée totale : %.2f secondes", elapsed)
+    print(f" FIN DU CRON  Durée totale : {elapsed} secondes")
 
 
 def send_sms(sms):
