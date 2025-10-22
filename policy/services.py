@@ -1129,8 +1129,14 @@ def insert_renewals(date_from=None, date_to=None, officer_id=None, reminding_int
 def update_renewals():
     from core import datetime
     now = datetime.datetime.now()
-    updated_policies = Policy.objects.filter(validity_to__isnull=True, expiry_date__lt=now) \
-        .update(status=Policy.STATUS_EXPIRED)
+    updated_policies = Policy.objects.filter(
+        validity_to__isnull=True,
+        expiry_date__lt=now,
+    ).exclude(
+        status=Policy.STATUS_EXPIRED
+    ).update(
+        status=Policy.STATUS_EXPIRED
+    )
     logger.debug("update_renewals set %s policies to expired status", updated_policies)
     return updated_policies
 
