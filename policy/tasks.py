@@ -37,9 +37,15 @@ def get_policies_for_renewal(interval=None, region=None, district=None, ward=Non
             break
     else:
         location = None
+    logger.debug("Début de insert_renewals !!!")
     insert_renewals(date_from, date_to, officer_id=officer, reminding_interval=interval, location_id=location)
+    logger.debug("Fin de insert_renewals !!!")
+    logger.debug("Début de update_renewals !!!")
     update_renewals()
+    logger.debug("Fin de update_renewals !!!")
+    logger.debug("Début de policy_renewal_sms !!!")
     sms_queue = policy_renewal_sms(family_message_template, date_from, date_to, sms_header_template)
+    logger.debug(f"Nombre de SMS dans la file : {len(sms_queue)} !!!")
     for sms in sms_queue:
         send_sms(sms)
     elapsed = time.time() - start
