@@ -28,35 +28,19 @@ def get_policies_for_renewal(interval=None, region=None, district=None, ward=Non
     """
     start = time.time()
     logger.debug("debut du cron!!!!!")
-    print("debut du cron!!!!!")
-    logger.warning(">>> Début du cron get_policies_for_renewal !!!")
     for item in [region, district, ward, village]:
         if item:
             location = item
             break
     else:
         location = None
-    logger.debug("Début de insert_renewals !!!")
-    print("Début de insert_renewals !!!")
     insert_renewals(date_from, date_to, officer_id=officer, reminding_interval=interval, location_id=location)
-    print("Fin de insert_renewals !!!")
-    logger.debug("Fin de insert_renewals !!!")
-    logger.debug("Début de update_renewals !!!")
-    print("Début de update_renewals !!!")
     update_renewals()
-    print("Fin de update_renewals !!!")
-    logger.debug("Fin de update_renewals !!!")
-    print("Début de policy_renewal_sms !!!")
-    logger.debug("Début de policy_renewal_sms !!!")
     sms_queue = policy_renewal_sms(family_message_template, date_from, date_to, sms_header_template)
-    print(f"Nombre de SMS dans la file : {len(sms_queue)} !!!")
-    logger.debug(f"Nombre de SMS dans la file : {len(sms_queue)} !!!")
     for sms in sms_queue:
         send_sms(sms)
     elapsed = time.time() - start
     logger.debug(" FIN DU CRON  Durée totale : %.2f secondes", elapsed)
-    logger.warning("FIN DU CRON — Durée totale : %.2f secondes", elapsed)
-    print(f" FIN DU CRON  Durée totale : {elapsed} secondes")
 
 
 def send_sms(sms):
