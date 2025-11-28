@@ -8,13 +8,13 @@ import django.utils.timezone
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('policy', '0005_auto_20230622_1854'),
+        ('policy', '0006_add_foreign_keys'),
     ]
 
     operations = [
-        # migrations.AddField(
-        #     model_name='policy',
-        #     name='creation_date',
-        #     field=models.DateField(blank=True, default=django.utils.timezone.now, db_column='creationDate', null=True),
-        # ),
+        migrations.AddField(
+             model_name='policy',
+             name='creation_date',
+             field=models.DateField(blank=True, default=django.utils.timezone.now, db_column='creationDate', null=True),
+        ),
     ]

@@ -119,6 +119,13 @@ class PolicyRenewal(core_models.VersionedModel):
     audit_user_id = models.IntegerField(db_column='AuditCreateUser', null=True, blank=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['policy', 'validity_to'],
+                name='unique_policy_validity_to_null',
+                condition=models.Q(validity_to__isnull=True)
+            )
+        ]
         managed = True
         db_table = 'tblPolicyRenewals'
 

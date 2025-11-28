@@ -224,7 +224,7 @@ def set_value(policy, family, prev_policy):
     discount(policy, prev_policy)
 
 
-def policy_values(policy, family, prev_policy, enroll_date):
+def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
     members = family.members.filter(validity_to__isnull=True).count()
     max_members = policy.product.max_members
     above_max = max(0, members - max_members)
