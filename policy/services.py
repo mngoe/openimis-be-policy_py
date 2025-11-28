@@ -36,7 +36,6 @@ def reset_policy_before_update(policy):
 
 cache = caches['coverage']
 
-
 class PolicyService:
     def __init__(self, user):
         self.user = user
