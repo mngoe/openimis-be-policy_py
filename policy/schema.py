@@ -97,6 +97,79 @@ class Query(graphene.ObjectType):
         region=graphene.String(),
     )
 
+    update_wrong_policy_values = graphene.Field(
+        PolicyAndWarningsGQLType,
+        prev_uuid=graphene.String(required=False),
+        stage=graphene.String(required=True),
+        enrollDate=graphene.DateTime(required=True),
+        product_id=graphene.Int(required=True),
+        family_id=graphene.Int(required=True),
+        contribution_plan_uuid = graphene.UUID(required=True),
+        periodicity = graphene.String(required=False)
+    )
+
+    def resolve_update_wrong_policy_values(self, info, **kwargs):
+        """
+        Recompute policies value and correct bad values
+        """
+        corrected_policies = 0
+        print("kwargs ", kwargs)
+        all_policies = Policy.objects.filter(validity_to__isnull=True)
+        print(len(all_policies))
+        for policy in all_policies:
+            print("Family ", policy.family.uuid)
+            old_value = policy.value
+            contribution_plan = ContributionPlan.objects.filter(
+                uuid=str(
+                    policy.contribution_plan.uuid
+                )
+            )
+            print("contribution_plan ", contribution_plan)
+            if contribution_plan:
+                product = Product.objects.filter(
+                    id=policy.product.id
+                ).first()
+                print("product ", product)
+
+                if product:
+                    policyl = PolicyGQLType(
+                        stage=policy.stage,
+                        enroll_date=policy.enroll_date,
+                        start_date=policy.start_date,
+                        product=product,
+                        contribution_plan=contribution_plan[0].id,
+                        periodicity=policy.periodicity
+                    )
+                    prefetch = Prefetch(
+                        'members',
+                        queryset=Insuree.objects.filter(
+                            validity_to__isnull=True).order_by('validity_from')
+                    )
+                    family = Family.objects \
+                        .prefetch_related(prefetch) \
+                        .get(id=policy.family.id)
+                    prev_policy = None
+                    if 'prev_uuid' in kwargs:
+                        prev_policy = Policy.objects.get(
+                            uuid=kwargs.get('prev_uuid')
+                        )
+                    policy2, warnings = policy_values(
+                        policyl, family, prev_policy, info.context.user
+                    )
+                    new_value = policy2.value
+                    print(
+                        "compare old value: ",
+                        old_value, " and new value ", new_value
+                    )
+                    if old_value == new_value:
+                        print("OK.......")
+                    if old_value != new_value:
+                        print("NON OK-------")
+                        corrected_policies += 1
+                        # policy.value = new_value
+                        # policy.save()
+        print("****ENDED with corrected policies ", corrected_policies)
+
     def resolve_policy_values(self, info, **kwargs):
         if not info.context.user.has_perms(PolicyConfig.gql_query_policies_perms):
             raise PermissionDenied(_("unauthorized"))
