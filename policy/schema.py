@@ -166,8 +166,8 @@ class Query(graphene.ObjectType):
                     if old_value != new_value:
                         print("NON OK-------")
                         corrected_policies += 1
-                        # policy.value = new_value
-                        # policy.save()
+                        policy.value = new_value
+                        policy.save()
         print("****ENDED with corrected policies ", corrected_policies)
 
     def resolve_policy_values(self, info, **kwargs):
