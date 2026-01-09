@@ -32,6 +32,7 @@ class PolicyInputType(OpenIMISMutation.Input):
     is_paid = graphene.Boolean(required=False)
     receipt = graphene.String(required=False)
     payer_uuid = graphene.String(required=False)
+    pregnancy_age = graphene.Int(required=False)
 
 
 class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
