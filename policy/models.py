@@ -42,6 +42,7 @@ class Policy(core_models.VersionedModel):
     # row_id = models.BinaryField(db_column='RowID', blank=True, null=True)
     policy_number = models.CharField(db_column='policyNumber', max_length=50, blank=True, null=True)
     creation_date = models.DateField(db_column='creationDate', default=django_tz.now, blank=True, null=True)
+    pregnancy_age = models.PositiveSmallIntegerField(db_column='PregnancyAge', blank=True, null=True)
 
     @staticmethod
     def get_query_sum_premium(photo=False):
