@@ -46,7 +46,7 @@ def reset_policy_before_update(policy):
     policy.periodicity = None
     policy.payment_day = None
 
-def calculate_due_date(today: py_date, payment_day: int, period: int) -> py_date:
+def calculate_due_date(today: py_date, payment_day: int) -> py_date:
     """
     Calcule la prochaine date d'échéance en tenant compte de la période.
     
@@ -59,23 +59,18 @@ def calculate_due_date(today: py_date, payment_day: int, period: int) -> py_date
     Returns:
         Prochaine date d'échéance
     """
-    # Calculer depuis une date de référence (première échéance)
-    # Ici on suppose qu'on part de today, mais vous pourriez avoir
-    # une date de début
-    reference_date = today.replace(day=1) # Premier du mois comme référence
-
-    # Trouver le prochain multiple de la période
-    months_from_reference = 0
-    temp_date = reference_date
-
-    while temp_date <= today:
-        temp_date = reference_date + relativedelta(
-            months=months_from_reference)
-        months_from_reference += period
-
-    # Maintenant temp_date est la prochaine date de période
-    year = temp_date.year
-    month = temp_date.month
+    if payment_day < today.day:
+        # Mois suivant
+        if today.month == 12:
+            year = today.year + 1
+            month = 1
+        else:
+            year = today.year
+            month = today.month + 1
+    else:
+        # Mois courant
+        year = today.year
+        month = today.month
 
     # Ajuster le jour si nécessaire
     days_in_month = calendar.monthrange(year, month)[1]
@@ -313,7 +308,7 @@ class PolicyService:
                     if data["payment_day"]:
                         payment_day = int(data["payment_day"])
                     date_due = calculate_due_date(
-                        today.date(), payment_day, periodicity)
+                        today.date(), payment_day)
                     logger.warning("date due %s", date_due)
                     if data["payment_day"]:
                         date_due = date_due.replace(day=int(data["payment_day"]))
