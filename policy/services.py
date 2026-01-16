@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import timedelta, datetime as py_datetime, date as py_date
 
 import core
+import calendar
 from claim.models import ClaimService, Claim, ClaimItem
 from django import dispatch
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -45,6 +46,42 @@ def reset_policy_before_update(policy):
     policy.periodicity = None
     policy.payment_day = None
 
+def calculate_due_date(today: py_date, payment_day: int, period: int) -> py_date:
+    """
+    Calcule la prochaine date d'échéance en tenant compte de la période.
+    
+    Args:
+        today: Date actuelle
+        payment_day: Jour de paiement souhaité (1-31)
+        period: Période en mois
+        (1=mensuel, 3=trimestriel, 6=semestriel, 12=annuel)
+    
+    Returns:
+        Prochaine date d'échéance
+    """
+    # Calculer depuis une date de référence (première échéance)
+    # Ici on suppose qu'on part de today, mais vous pourriez avoir
+    # une date de début
+    reference_date = today.replace(day=1) # Premier du mois comme référence
+
+    # Trouver le prochain multiple de la période
+    months_from_reference = 0
+    temp_date = reference_date
+
+    while temp_date <= today:
+        temp_date = reference_date + relativedelta(
+            months=months_from_reference)
+        months_from_reference += period
+
+    # Maintenant temp_date est la prochaine date de période
+    year = temp_date.year
+    month = temp_date.month
+
+    # Ajuster le jour si nécessaire
+    days_in_month = calendar.monthrange(year, month)[1]
+    day = min(payment_day, days_in_month)
+
+    return py_date(year, month, day)
 
 class PolicyService:
     def __init__(self, user):
@@ -240,9 +277,11 @@ class PolicyService:
                         else:
                             chf_id = family.id
                         code = str(chf_id) + str(today.year) + str(today.month)
-                        date_due = today + datetimedelta(
-                            months=1
-                        )
+                        payment_day = 5 #5 par défaut
+                        if data["payment_day"]:
+                            payment_day = int(data["payment_day"])
+                        date_due = calculate_due_date(
+                            today.date(), payment_day, periodicity)
                         logger.warning("date due %s", date_due)
                         if data["payment_day"]:
                             date_due = date_due.replace(day=int(data["payment_day"]))
@@ -275,7 +314,7 @@ class PolicyService:
                         if family.head_insuree:
                             existing_invoices = Invoice.objects.filter(
                                 subject_id=family.head_insuree.id,
-                                date_valid_from__date__gte=date_due.date(),
+                                date_valid_from__date__gte=date_due,
                                 is_deleted=False
                             )
                         logger.warning("existing invoices %s ",
