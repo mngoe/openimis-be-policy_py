@@ -1363,16 +1363,20 @@ def policy_status_premium_paid(policy, effective_date):
         
         # Calcul de la date d'expiration en fonction de la périodicité
         if policy.periodicity == Policy.MONTHLY:
-            policy.expiry_date = effective_date + relativedelta(months=1)
+            base_expiry= effective_date + relativedelta(months=1)
         elif policy.periodicity == Policy.QUARTERLY:
-            policy.expiry_date = effective_date + relativedelta(months=3)
+            base_expiry = effective_date + relativedelta(months=3)
         elif policy.periodicity == Policy.SEMESTER:
-            policy.expiry_date = effective_date + relativedelta(months=6)
+            base_expiry = effective_date + relativedelta(months=6)
         elif policy.periodicity == Policy.YEARLY:
-            policy.expiry_date = effective_date + relativedelta(years=1)
+            base_expiry = effective_date + relativedelta(years=1)
         else:
-            policy.expiry_date = effective_date + relativedelta(months=1)
+            base_expiry = effective_date + relativedelta(months=1)
         
+        product = policy.product
+        grace_days = (product.grace_period_payment or 0) * 30
+        grace_period = timedelta(days=grace_days) if grace_days else timedelta(0)
+        policy.expiry_date = base_expiry + grace_period
     else:
         policy.status = Policy.STATUS_READY
 
