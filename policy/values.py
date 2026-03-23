@@ -69,30 +69,26 @@ def set_expiry_date(policy, family, enroll_date):
     product = policy.product
     print("Age Max sur le produit ", product.age_maximal)
     print("Age Min sur le produit ", product.age_minimal)
-    the_date = py_datetime.datetime.strptime(
-        str(enroll_date.date()), "%Y-%m-%d").date()
     
     from core import datetime, datetimedelta
 
     insurance_period = datetimedelta(
         months=product.insurance_period) if product.insurance_period % 12 != 0 else datetimedelta(
         years=product.insurance_period // 12)
-    policy.expiry_date = (
+    expiry_date = (
             datetime.date.from_ad_date(policy.start_date) +
             insurance_period -
             datetimedelta(days=1)
     ).to_ad_date()
     if product.age_maximal:
-        diff = product.age_maximal - age_patient
-        if(diff < 0):
-            diff = -diff
-        print("diff ", diff)
-        from dateutil.relativedelta import relativedelta
-        exp_date = the_date + relativedelta(years=+diff)
-        print("exp_date ", exp_date)
-        policy.expiry_date = exp_date
+        age_at_expiry = relativedelta(expiry_date, insuree_dob)
+        if age_at_expiry.years > product.age_maximal or \
+            (age_at_expiry.years == product.age_maximal and age_at_expiry.months > 0):
+            expiry_date = insuree_dob + relativedelta(years=product.age_maximal)
+
     else:
         print("The product does not have the max age")
+    policy.expiry_date = expiry_date
 
 
 def family_counts(product, family):
