@@ -36,6 +36,7 @@ def reset_policy_before_update(policy):
 
 cache = caches['coverage']
 
+
 class PolicyService:
     def __init__(self, user):
         self.user = user
@@ -98,12 +99,12 @@ class PolicyService:
                     raise Exception((errors[0]["message"]))
                 cheques = ChequeImportLine.objects.filter(
                     chequeImportLineCode=policy_number,
-                    chequeImportLineStatus='new'
+                    chequeImportLineStatus='New'
                 )
                 print("cheques ", cheques)
                 if cheques:
                     current_cheque = cheques[0]
-                    setattr(current_cheque, "chequeImportLineStatus", "used")
+                    setattr(current_cheque, "chequeImportLineStatus", "Used")
                     current_cheque.save()
             return self.create_policy(data, user)
 
@@ -1291,7 +1292,7 @@ def validate_policy_number(policy_number, is_new_policy=False):
         cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number)
         print("cheque ", cheques)
         if cheques:
-            if cheques[0].chequeImportLineStatus=="used":
+            if cheques[0].chequeImportLineStatus=="Used":
                 return [{"message": "Chèque %s déjà utilisé" % policy_number}]
 
     if ChequeImportLine.objects.filter(chequeImportLineCode=policy_number).exists()==False:
