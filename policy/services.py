@@ -14,7 +14,8 @@ from django.utils.translation import gettext as _
 from graphene.utils.str_converters import to_snake_case
 from invoice.services import InvoiceService
 from invoice.services.invoiceLineItem import InvoiceLineItemService
-from invoice.models import Invoice
+from invoice.models import Invoice, InvoiceEvent
+from django.contrib.contenttypes.models import ContentType
 from .apps import CALCULATION_RULES
 from contribution_plan.models import ContributionPlan
 from decimal import Decimal
@@ -26,6 +27,7 @@ from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.utils import MonthsAdd
+from policyholder.models import PolicyHolder
 
 from .models import Policy, PolicyRenewal
 from dateutil.relativedelta import relativedelta
@@ -289,59 +291,10 @@ class PolicyService:
                             if same_code_invoices:
                                 code = code + "_" + str(
                                     len(same_code_invoices)+1)
-                            # create goverment invoice
+                                                               
                             if government_amount > 0:
-                                values = {
-                                    "code": code,
-                                    "date_due": date_due,
-                                    "date_valid_from": date_due,
-                                    "date_valid_to": date_valid_to,
-                                    "amount_net": government_amount,
-                                    "amount_total": government_amount,
-                                    "status": 1,
-                                    "cron_job_code": code
-                                }
-                                if family.head_insuree:
-                                    values["subject_id"] = family.head_insuree.id
-                                    values["subject_type"] = "insuree"
-                                    values["thirdparty_id"] = family.head_insuree.id
-                                    values["thirdparty_type"] = "insuree"
-                                    if family_amount > 0:
-                                        # update code as two invoice will be
-                                        # created as the code is unique
-                                        values["code"] = values["code"] + "-G"
-                                        values["cron_job_code"] = values["cron_job_code"] + "-G"
-                                invoice_service = InvoiceService(user=user)
-                                result_invoice = invoice_service.create(
-                                    values
-                                )
-                                logger.warning(
-                                    "Invoice government amount created %s",
-                                    result_invoice)
-                                if result_invoice["success"] is True:
-                                    invoice_line_item_service =\
-                                        InvoiceLineItemService(user=user)
-                                    item_values = {
-                                        "invoice_id": result_invoice["data"]["id"],
-                                        "code": code,
-                                        "ledger_account": "Etat",
-                                        "quantity": quantity,
-                                        "unit_price": government_amount,
-                                        "amount_net": government_amount,
-                                        "amount_total": government_amount,
-                                        "cron_job_code": code
-                                    }
-                                    if family_amount > 0:
-                                        # update code as two invoice will be
-                                        # created as the code is unique
-                                        item_values["code"] = item_values["code"] + "-G"
-                                        item_values["cron_job_code"] = item_values["cron_job_code"] + "-G"
-                                    result = invoice_line_item_service.create(
-                                        item_values
-                                    )
-                                    logger.warning(
-                                        "Invoice line gov_amount created %s",
-                                        result)
+                                self._add_to_global_invoice(family, user, government_amount, data, 
+                                                            date_due, date_valid_to, quantity, policy)
                             # create Family invoice
                             if family_amount > 0:
                                 invoice_service = InvoiceService(user=user)
@@ -385,6 +338,109 @@ class PolicyService:
                                         "Invoice line amount_family created %s",
                                         result)
         return policy
+    
+    def _add_to_global_invoice(self, family, user, government_amount, data, date_due, date_valid_to, quantity, policy):
+        today = py_datetime.now()
+        policy_holder = PolicyHolder.objects.filter(code="AFD", is_deleted=False).first()
+        invoice_service = InvoiceService(user=user)
+        period = today.strftime("%Y%m")
+        subject_id = policy_holder.id if policy_holder else "AFD"
+        subject_type = ContentType.objects.get_for_model(PolicyHolder)
+        code = f"AFD_{period}"
+        
+        # Search for an existing global invoice in "Draft" status for the period
+        global_invoice = Invoice.objects.filter(
+            status=Invoice.Status.DRAFT,
+            subject_id=subject_id,
+            subject_type=subject_type,
+            is_deleted=False
+        ).first()
+        
+        if not global_invoice:
+            # Create a new global invoice
+            same_code_invoices = Invoice.objects.filter(
+                subject_id=subject_id, 
+                code__startswith=code, 
+                is_deleted=False)
+
+            logger.warning("same code invoices %s ",
+                            same_code_invoices)
+            if same_code_invoices:
+                code = code + "_" + str(len(same_code_invoices)+1)
+                
+            values = {
+                "code": code,
+                "date_due": date_due,
+                "date_valid_from": date_due,
+                "date_valid_to": date_valid_to,
+                "amount_net": 0,
+                "amount_total": 0,
+                "status": Invoice.Status.DRAFT,
+                "cron_job_code": code,
+                "subject_id": subject_id,
+                "subject_type": subject_type,
+                "thirdparty_id": subject_id,
+                "thirdparty_type": subject_type
+            }
+            result_invoice = invoice_service.create(values)
+            if result_invoice["success"]:
+                global_invoice = Invoice.objects.get(id=result_invoice["data"]["id"])
+            else:
+                raise ValidationError("Failed to create global invoice")
+        
+        # Add the line to the global invoice
+        invoice_line_item_service = InvoiceLineItemService(user=user)
+        chf_id = family.head_insuree.chf_id if family.head_insuree else family.id
+        line_code = f"{chf_id}_{period}"
+        PERIODICITY_LABELS_FR = {
+            'M': 'Mensuelle',
+            'Q': 'Trimestrielle',
+            'S': 'Semestrielle',
+            'Y': 'Annuelle'
+        }
+        raw_periodicity = data.get('periodicity')
+        periodicity_label = PERIODICITY_LABELS_FR.get(raw_periodicity, raw_periodicity)
+
+        description = (
+            f"Contribution AFD pour l'assuré {chf_id}, "
+            f"périodicité {periodicity_label}, "
+            f"Nouveau contrat {policy.contribution_plan.code if policy.contribution_plan else None}"
+        )
+        
+        line_values = {
+            "invoice_id": global_invoice.id,
+            "code": line_code,
+            "ledger_account": "Etat",
+            "quantity": quantity,
+            "unit_price": government_amount / quantity if quantity > 1 else government_amount,
+            "amount_net": government_amount,
+            "amount_total": government_amount,
+            "cron_job_code": line_code,
+            "description": description
+        }
+        result_invoice_line = invoice_line_item_service.create(line_values)
+        logger.warning("Invoice line for AFD created %s", result_invoice_line)
+        
+        # Update the total amounts of global invoice
+        if result_invoice_line["success"] is True:
+            print(f"result_invoice_line success {result_invoice_line} ")
+            global_invoice.amount_net += Decimal(str(government_amount))
+            global_invoice.amount_total += Decimal(str(government_amount))
+            updated_invoice = invoice_service.update({
+                "id": global_invoice.id,
+                "amount_net": global_invoice.amount_net,
+                "amount_total": global_invoice.amount_total
+            })
+            logger.warning("Invoice  for AFD updated %s", updated_invoice)
+
+            if updated_invoice["success"] is True:
+                # Save the add line event 
+                event = InvoiceEvent(
+                    invoice=global_invoice,
+                    event_type=InvoiceEvent.EventType.MESSAGE,
+                    message=f"Ligne ajoutée pour l'assuré {chf_id}, montant {government_amount}, {description}, date {today}",
+                )
+                event.save(username=user.username)
 
     def generate_contribution_receipt(self, product, enroll_date):
         from contribution.models import Premium
