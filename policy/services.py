@@ -30,6 +30,7 @@ from policy.utils import MonthsAdd
 
 from .models import Policy, PolicyRenewal
 from dateutil.relativedelta import relativedelta
+from policyholder.models import PolicyHolder
 
 logger = logging.getLogger(__name__)
 
@@ -356,7 +357,15 @@ class PolicyService:
                             code = code + "_" + str(
                                 len(same_code_invoices)+1)
                         # create goverment invoice
-                        if government_amount > 0:
+                        policy_holder = PolicyHolder.objects.filter(
+                            is_deleted=False,
+                            code="AFD"
+                        ).filter(
+                            Q(date_valid_to__isnull=True) |
+                            Q(date_valid_to__date__gte=today.date())
+                        ).first()
+                        logger.warning("policy holder found %s", policy_holder)
+                        if government_amount > 0 and policy_holder:
                             values = {
                                 "code": code,
                                 "date_due": date_due,
@@ -370,8 +379,8 @@ class PolicyService:
                             if family.head_insuree:
                                 values["subject_id"] = family.head_insuree.id
                                 values["subject_type"] = "insuree"
-                                values["thirdparty_id"] = family.head_insuree.id
-                                values["thirdparty_type"] = "insuree"
+                                values["thirdparty_id"] = policy_holder.id
+                                values["thirdparty_type"] = "policyholder"
                                 if family_amount > 0:
                                     # update code as two invoice will be
                                     # created as the code is unique
