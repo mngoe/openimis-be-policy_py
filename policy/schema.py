@@ -37,7 +37,8 @@ from .gql_mutations import (
     UpdatePolicyMutation,
     DeletePoliciesMutation,
     RenewPolicyMutation,
-    SuspendPoliciesMutation
+    SuspendPoliciesMutation,
+    ForcePoliciesExpirationMutation
 )
 from .values import policy_values
 
@@ -361,6 +362,7 @@ class Mutation(graphene.ObjectType):
     delete_policies = DeletePoliciesMutation.Field()
     renew_policy = RenewPolicyMutation.Field()
     suspend_policies = SuspendPoliciesMutation.Field()
+    force_policies_expiration = ForcePoliciesExpirationMutation.Field()
 
 
 def on_policy_mutation(sender, **kwargs):
