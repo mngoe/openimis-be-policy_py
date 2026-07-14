@@ -218,6 +218,22 @@ class PolicyService:
                     'detail': policy.uuid}]
             }
 
+    def set_expiration_forced(self, user, policy):
+        try:
+            policy.save_history()
+            policy.status = Policy.STATUS_EXPIRED
+            policy.stage = Policy.STAGE_EXPIRATION_FORCED
+            policy.audit_user_id = user.id_for_audit
+            policy.save()
+            return []
+        except Exception as exc:
+            return {
+                'title': policy.uuid,
+                'list': [{
+                    'message': _("policy.mutation.failed_to_force_policy_expiration") % {'uuid': policy.uuid},
+                    'detail': policy.uuid}]
+            }
+
     def set_deleted(self, policy):
         try:
             insuree_policies = InsureePolicy.objects.filter(policy=policy)

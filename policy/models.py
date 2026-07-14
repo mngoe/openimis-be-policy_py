@@ -76,6 +76,7 @@ class Policy(core_models.VersionedModel):
 
     STAGE_NEW = 'N'
     STAGE_RENEWED = 'R'
+    STAGE_EXPIRATION_FORCED = 'F'
 
     @classmethod
     def get_queryset(cls, queryset, user):
