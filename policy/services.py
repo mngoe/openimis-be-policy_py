@@ -207,6 +207,7 @@ class PolicyService:
         try:
             policy.save_history()
             policy.status = Policy.STATUS_SUSPENDED
+            policy.expiry_date = py_datetime.now().date()
             policy.audit_user_id = user.id_for_audit
             policy.save()
             return []
