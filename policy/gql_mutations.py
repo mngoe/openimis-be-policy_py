@@ -169,7 +169,7 @@ class ForcePoliciesExpirationMutation(OpenIMISMutation):
                 if type(user) is AnonymousUser or not user.id:
                     raise ValidationError(
                         _("mutation.authentication_required"))
-                if not user.has_perms(PolicyConfig.gql_mutation_force_policies_expiration_perms):
+                if not user.has_perms(PolicyConfig.gql_mutation_force_expiration_perms):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
