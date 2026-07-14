@@ -23,7 +23,7 @@ DEFAULT_CFG = {
     "CTIVATION_OPTION_PAYMENT": 2,
     "ACTIVATION_OPTION_READY": 3,
     "contribution_receipt_length": 5,
-    "gql_mutation_force_policies_expiration_perms": ['101208'],
+    "gql_mutation_force_expiration_perms": ['101208'],
 }
 
 
@@ -39,7 +39,7 @@ class PolicyConfig(AppConfig):
     gql_mutation_renew_policies_perms = []
     gql_mutation_edit_policies_perms = []
     gql_mutation_suspend_policies_perms = []
-    gql_mutation_force_policies_expiration_perms = []
+    gql_mutation_force_expiration_perms = []
     one_policy_per_program = False
     gql_mutation_delete_policies_perms = []
     policy_renewal_interval = None
