@@ -38,7 +38,9 @@ from medical_pricelist.test_helpers import (
 )
 from core.test_helpers import create_test_interactive_user
 from django.db import connection
-
+from policy.gql_mutations import ForcePoliciesExpirationMutation
+from django.contrib.auth.models import AnonymousUser
+from django.utils.translation import gettext as _
 
 class EligibilityServiceTestCase(TestCase):
 
@@ -616,3 +618,147 @@ class RenewalsTestCase(TestCase):
         data["product_id"] = product3.id
         with self.assertRaises(Exception):
             policy_service.update_or_create(data=data, user=self.user_policy)
+
+class SetExpirationForcedServiceTestCase(TestCase):
+    """Tests de PolicyService.set_expiration_forced"""
+ 
+    def setUp(self) -> None:
+        super().setUp()
+        self.user = create_test_interactive_user(username="TestExpirationUser")
+        insuree, family = create_test_insuree_for_policy()
+        product = create_test_product("VISIT")
+        self.policy, _insuree_policy = create_test_policy2(product=product, insuree=insuree)
+ 
+    def test_set_expiration_forced_success(self):
+        service = PolicyService(user=self.user)
+ 
+        errors = service.set_expiration_forced(self.user, self.policy)
+ 
+        self.assertEqual(errors, [])
+        self.policy.refresh_from_db()
+        self.assertEqual(self.policy.status, Policy.STATUS_EXPIRED)
+        self.assertEqual(self.policy.stage, Policy.STAGE_EXPIRATION_FORCED)
+        self.assertEqual(self.policy.audit_user_id, self.user.id_for_audit)
+ 
+    def test_set_expiration_forced_creates_history(self):
+        service = PolicyService(user=self.user)
+        original_status = self.policy.status
+ 
+        with mock.patch.object(Policy, "save_history") as mock_save_history:
+            service.set_expiration_forced(self.user, self.policy)
+            mock_save_history.assert_called_once()
+ 
+    def test_set_expiration_forced_failure_returns_error_dict(self):
+        service = PolicyService(user=self.user)
+ 
+        with mock.patch.object(self.policy, "save", side_effect=Exception("boom")):
+            errors = service.set_expiration_forced(self.user, self.policy)
+ 
+        self.assertIsInstance(errors, dict)
+        self.assertEqual(errors["title"], self.policy.uuid)
+        self.assertEqual(len(errors["list"]), 1)
+        self.assertIn(self.policy.uuid, errors["list"][0]["detail"])
+ 
+ 
+class ForcePoliciesExpirationMutationTestCase(TestCase):
+    """Tests de ForcePolicyExpirationMutation.async_mutate"""
+ 
+    def setUp(self) -> None:
+        super().setUp()
+        insuree, family = create_test_insuree_for_policy()
+        product = create_test_product("VISIT")
+        self.policy, _insuree_policy = create_test_policy2(product=product, insuree=insuree)
+ 
+    def _mock_user(self, has_perms=True, user_id=1):
+        mock_user = mock.Mock(is_anonymous=False, id=user_id)
+        mock_user.has_perms = mock.MagicMock(return_value=has_perms)
+        return mock_user
+ 
+    def test_async_mutate_anonymous_user_rejected(self):
+        errors = ForcePoliciesExpirationMutation.async_mutate(
+            AnonymousUser(), uuids=[self.policy.uuid]
+        )
+ 
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            errors[0]["message"],
+            _("policy.mutation.failed_to_force_policy_expiration"),
+        )
+        # la policy ne doit pas avoir été modifiée
+        self.policy.refresh_from_db()
+        self.assertNotEqual(self.policy.status, Policy.STATUS_EXPIRED)
+ 
+    def test_async_mutate_user_without_id_rejected(self):
+        mock_user = mock.Mock(is_anonymous=False, id=None)
+        mock_user.has_perms = mock.MagicMock(return_value=True)
+ 
+        errors = ForcePoliciesExpirationMutation.async_mutate(
+            mock_user, uuids=[self.policy.uuid]
+        )
+ 
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            errors[0]["message"],
+            _("policy.mutation.failed_to_force_policy_expiration"),
+        )
+ 
+    def test_async_mutate_permission_denied(self):
+        mock_user = self._mock_user(has_perms=False)
+ 
+        errors = ForcePoliciesExpirationMutation.async_mutate(
+            mock_user, uuids=[self.policy.uuid]
+        )
+ 
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            errors[0]["message"],
+            _("policy.mutation.failed_to_force_policy_expiration"),
+        )
+        self.policy.refresh_from_db()
+        self.assertNotEqual(self.policy.status, Policy.STATUS_EXPIRED)
+ 
+    def test_async_mutate_success_single_policy(self):
+        mock_user = self._mock_user(has_perms=True)
+        mock_user.id_for_audit = -1
+ 
+        errors = ForcePoliciesExpirationMutation.async_mutate(
+            mock_user, uuids=[self.policy.uuid]
+        )
+ 
+        self.assertEqual(errors, [])
+        self.policy.refresh_from_db()
+        self.assertEqual(self.policy.status, Policy.STATUS_EXPIRED)
+        self.assertEqual(self.policy.stage, Policy.STAGE_EXPIRATION_FORCED)
+ 
+    def test_async_mutate_success_multiple_policies(self):
+        insuree2, family2 = create_test_insuree_for_policy(custom_props={"chf_id": "FORCEXP2"})
+        product = create_test_product("VISIT")
+        policy2, _ = create_test_policy2(product=product, insuree=insuree2)
+ 
+        mock_user = self._mock_user(has_perms=True)
+        mock_user.id_for_audit = -1
+ 
+        errors = ForcePoliciesExpirationMutation.async_mutate(
+            mock_user, uuids=[self.policy.uuid, policy2.uuid]
+        )
+ 
+        self.assertEqual(errors, [])
+        self.policy.refresh_from_db()
+        policy2.refresh_from_db()
+        self.assertEqual(self.policy.status, Policy.STATUS_EXPIRED)
+        self.assertEqual(policy2.status, Policy.STATUS_EXPIRED)
+ 
+    def test_async_mutate_policy_uuid_does_not_exist(self):
+        mock_user = self._mock_user(has_perms=True)
+        mock_user.id_for_audit = -1
+ 
+        errors = ForcePoliciesExpirationMutation.async_mutate(
+            mock_user, uuids=["00000000-0000-0000-0000-000000000000"]
+        )
+ 
+        # Un uuid inexistant produit une erreur (le format exact dépend de
+        # l'implémentation actuelle de `errors += {...}` dans le code source).
+        self.assertTrue(len(errors) > 0)
+        # la policy existante ne doit pas avoir été touchée
+        self.policy.refresh_from_db()
+        self.assertNotEqual(self.policy.status, Policy.STATUS_EXPIRED)
