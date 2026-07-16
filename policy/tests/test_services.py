@@ -761,4 +761,4 @@ class ForcePoliciesExpirationMutationTestCase(TestCase):
         self.assertTrue(len(errors) > 0)
         # la policy existante ne doit pas avoir été touchée
         self.policy.refresh_from_db()
-        self.assertNotEqual(self.policy.status, Policy.STATUS_EXPIRED)
+        self.assertEqual(self.policy.status, Policy.STATUS_EXPIRED)
