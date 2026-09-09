@@ -142,6 +142,12 @@ class PolicyService:
                 raise ValidationError("Receipt already exist for a given product.")
         else:
             receipt = self.generate_contribution_receipt(policy.product, policy.enroll_date)
+        # If a policy has a value of 0 it means that this policy is free
+        # we activate the policy immediatelly
+        print("value is ", data['value'])
+        if int(data['value']) == 0:
+            setattr(policy, "status",2)
+            setattr(policy, "effective_date", data['start_date'])
         policy.save()
         update_insuree_policies(policy, user.id_for_audit)
         if is_paid:
