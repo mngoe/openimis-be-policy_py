@@ -155,14 +155,6 @@ class PolicyService:
         data = self._clean_mutation_info(data)
         policy_uuid = data.pop('uuid') if 'uuid' in data else None
         policy = Policy.objects.get(uuid=policy_uuid)
-        logger.warning("Update: Config for invoice generation %s",
-                    PolicyConfig.generate_invoice_on_policy)
-        if PolicyConfig.generate_invoice_on_policy and\
-            data.get("signature_date", False) and not is_imported:
-            logger.warning(
-                "Old value of signature date %s", policy.signature_date)
-            if not policy.signature_date:
-                self.create_invoice(data, user, policy)
         policy.save_history()
         reset_policy_before_update(policy)
         [setattr(policy, key, data[key]) for key in data]
@@ -200,14 +192,10 @@ class PolicyService:
             if payer_uuid is not None:
                 premium_data["payer_uuid"] = payer_uuid
             premium_action(premium_data, user)
-        logger.warning("Config for invoice generation %s",
+        logger.warning("Current config for invoice generation %s",
                     PolicyConfig.generate_invoice_on_policy)
-        if PolicyConfig.generate_invoice_on_policy:
-            if is_imported:
-                self.create_invoice(data, user, policy)
-            if not is_imported:
-                if data.get("signature_date", False):
-                    self.create_invoice(data, user, policy)
+        if not is_imported:
+            self.create_invoice(data, user, policy)
         return policy
 
     def create_invoice(self, data, user, policy):
@@ -418,7 +406,7 @@ class PolicyService:
                                     "Invoice line gov_amount created %s",
                                     result)
                         # create Family invoice
-                        if family_amount > 0:
+                        if family_amount > 0 and PolicyConfig.generate_invoice_on_policy:
                             invoice_service = InvoiceService(user=user)
                             gov_values = {
                                 "code": code,
