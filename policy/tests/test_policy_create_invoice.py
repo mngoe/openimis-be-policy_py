@@ -29,6 +29,8 @@ class TestPolicyInvoice(TestCase):
             "start_date": date(2025, 1, 1),
             "enroll_date": date(2025, 1, 1),
         }
+        print("created user ", self.user)
+        print("created user ID", self.user.id)
         self.policy = self.service.create_policy(data, self.user)
 
     @patch("policy.services.update_insuree_policies")
