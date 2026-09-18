@@ -101,10 +101,10 @@ class TestPolicyInvoice(TestCase):
         )
         contribution_plan.save(username=self.user.username)
 
-        policy_holder = PolicyHolder.objects.create(
-            code="AFD",
-            trade_name="Agengence Francaise pour le dévelopement"
-        )
+        # policy_holder = PolicyHolder.objects.create(
+        #     code="AFD",
+        #     trade_name="Agengence Francaise pour le dévelopement"
+        # )
 
         # mock_policy_holder.objects.filter.return_value.filter.return_value.first.return_value = (
         #     policy_holder
