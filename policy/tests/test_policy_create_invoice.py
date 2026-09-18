@@ -1,7 +1,8 @@
 # Create your tests here.
 
 from django.test import TestCase
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, MagicMock
+from django.contrib.contenttypes.models import ContentType
 from datetime import date
 from decimal import Decimal
 from django.core.exceptions import ValidationError
@@ -10,6 +11,7 @@ import uuid
 from contribution_plan.models import ContributionPlan
 from policyholder.models import PolicyHolder
 from policy.services import PolicyService
+from product.models import Product
 from core.test_helpers import create_test_interactive_user
 from insuree.test_helpers import create_test_family, create_test_insuree
 
@@ -94,11 +96,15 @@ class TestPolicyInvoice(TestCase):
 
         calculation = str(uuid.uuid4())
 
+        benefit_plan_type = ContentType.objects.get_for_model(Product)
+
         contribution_plan = ContributionPlan(
             code="AMS",
             name="AMS Subvention totale",
             calculation=calculation,
             date_valid_from=date(2020, 1, 1),
+            benefit_plan_type=benefit_plan_type,
+            benefit_plan_id=self.product.id,
             periodicity=1
         )
         contribution_plan.save(username=self.user.username)
