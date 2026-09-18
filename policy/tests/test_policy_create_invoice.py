@@ -8,7 +8,6 @@ from django.core.exceptions import ValidationError
 from product.test_helpers import create_test_product
 import uuid
 from contribution_plan.models import ContributionPlan
-from product.models import Product
 from policyholder.models import PolicyHolder
 from policy.services import PolicyService
 from core.test_helpers import create_test_interactive_user
@@ -19,7 +18,7 @@ class TestPolicyInvoice(TestCase):
 
     def setUp(self):
         self.family = create_test_family()
-        self.product = create_test_product()
+        self.product = create_test_product(code="TST-HPD1")
         self.user = create_test_interactive_user()
         self.service = PolicyService(self.user)
         data = {
