@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from product.test_helpers import create_test_product
 import uuid
 from contribution_plan.models import ContributionPlan
-from policyholder.models import PolicyHolder
+from policy.models import Policy
 from policy.services import PolicyService
 from product.models import Product
 from core.test_helpers import create_test_interactive_user
@@ -135,6 +135,8 @@ class TestPolicyInvoice(TestCase):
             [(None, Decimal("1000"))],
             [(None, Decimal("0"))],
         ]
+        policy = Policy.objects.filter(product__id=self.product.id).first()
+        print("Policy: ", policy)
 
         with patch(
             "policy.services.CALCULATION_RULES",
@@ -148,7 +150,7 @@ class TestPolicyInvoice(TestCase):
                     "payment_day": 5,
                 },
                 self.user,
-                self.policy,
+                policy,
             )
 
         invoice_service.create.assert_called_once()
