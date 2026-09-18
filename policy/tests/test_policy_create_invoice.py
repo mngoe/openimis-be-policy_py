@@ -9,7 +9,6 @@ from django.core.exceptions import ValidationError
 from product.test_helpers import create_test_product
 import uuid
 from contribution_plan.models import ContributionPlan
-from policy.models import Policy
 from policyholder.models import PolicyHolder
 from policy.services import PolicyService
 from product.models import Product
@@ -76,8 +75,6 @@ class TestPolicyInvoice(TestCase):
 
     @patch("policy.services.InvoiceLineItemService")
     @patch("policy.services.InvoiceService")
-    # @patch("policy.services.PolicyHolder")
-    # @patch("policy.services.Invoice")
     @patch("policy.services.calculate_due_date")
     @patch("invoice.services.invoice.InvoiceService.create")
     def test_create_invoice_should_create_government_invoice(
@@ -121,9 +118,6 @@ class TestPolicyInvoice(TestCase):
         )
         policy_holder.save(username=self.user.username)
 
-        # mock_policy_holder.objects.filter.return_value.filter.return_value.first.return_value = (
-        #     policy_holder
-        # )
         data = {
             "family": self.family,
             "product": self.product,
