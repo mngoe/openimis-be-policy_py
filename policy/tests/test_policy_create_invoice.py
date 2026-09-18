@@ -92,13 +92,14 @@ class TestPolicyInvoice(TestCase):
 
         calculation = str(uuid.uuid4())
 
-        contribution_plan = ContributionPlan.objects.create(
+        contribution_plan = ContributionPlan(
             code="AMS",
             name="AMS Subvention totale",
             calculation=calculation,
             date_valid_from=date(2020, 1, 1),
             periodicity="M"
         )
+        contribution_plan.save(username=self.user.username)
 
         policy_holder = PolicyHolder.objects.create(
             code="AFD",
