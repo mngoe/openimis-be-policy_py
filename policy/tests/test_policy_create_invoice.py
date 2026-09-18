@@ -45,9 +45,9 @@ class TestPolicyInvoice(TestCase):
             "start_date": date(2025, 1, 1),
             "enroll_date": date(2025, 1, 1),
         }
-        self.policy = self.service.create_policy(data, self.user)
-        self.assertEqual(self.policy.status, 2)
-        self.assertEqual(self.policy.effective_date, date(2025, 1, 1))
+        policy = self.service.create_policy(data, self.user)
+        self.assertEqual(policy.status, 2)
+        self.assertEqual(policy.effective_date, date(2025, 1, 1))
 
     @patch(
         "contribution.services.check_unique_premium_receipt_code_within_product"
@@ -78,14 +78,19 @@ class TestPolicyInvoice(TestCase):
     @patch("policy.services.PolicyHolder")
     @patch("policy.services.Invoice")
     @patch("policy.services.calculate_due_date")
+    @patch("invoice.services.invoice.InvoiceService.create")
     def test_create_invoice_should_create_government_invoice(
         self,
+        mock_create,
         mock_due_date,
         mock_invoice,
         mock_policy_holder,
         mock_invoice_service,
         mock_invoice_line_service,
     ):
+        mock_create.return_value = {
+            "success": False
+        }
         mock_due_date.return_value = date(2025, 1, 5)
 
         head = create_test_insuree()
@@ -117,6 +122,15 @@ class TestPolicyInvoice(TestCase):
         # mock_policy_holder.objects.filter.return_value.filter.return_value.first.return_value = (
         #     policy_holder
         # )
+        data = {
+            "family": self.family,
+            "product": self.product,
+            "audit_user_id": 1,
+            "value": 0,
+            "start_date": date(2025, 1, 1),
+            "enroll_date": date(2025, 1, 1),
+        }
+        policy = self.service.create_policy(data, self.user)
 
         invoice_service = MagicMock()
         invoice_service.create.return_value = {
@@ -135,7 +149,6 @@ class TestPolicyInvoice(TestCase):
             [(None, Decimal("1000"))],
             [(None, Decimal("0"))],
         ]
-        policy = Policy.objects.filter(product__id=self.product.id).first()
         print("Policy: ", policy)
 
         with patch(
