@@ -32,7 +32,9 @@ class TestPolicyInvoice(TestCase):
         mock_update_insuree_policies
     ):
 
-        mock_create.return_value = Mock()
+        mock_create.return_value = {
+            "success": False
+        }
         data = {
             "family": self.family,
             "product": self.product,
@@ -97,7 +99,7 @@ class TestPolicyInvoice(TestCase):
             name="AMS Subvention totale",
             calculation=calculation,
             date_valid_from=date(2020, 1, 1),
-            periodicity="M"
+            periodicity=1
         )
         contribution_plan.save(username=self.user.username)
 
