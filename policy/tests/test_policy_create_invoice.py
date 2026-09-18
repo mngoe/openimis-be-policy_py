@@ -1,5 +1,4 @@
 # Create your tests here.
-
 from django.test import TestCase
 from unittest.mock import patch, MagicMock
 from django.contrib.contenttypes.models import ContentType
@@ -23,9 +22,6 @@ class TestPolicyInvoice(TestCase):
         self.product = create_test_product(code="TST-HPD1")
         self.user = create_test_interactive_user()
         self.service = PolicyService(self.user)
-        print("created user ", self.user)
-        print("created user ID", self.user.id)
-
     @patch("policy.services.update_insuree_policies")
     @patch("invoice.services.invoice.InvoiceService.create")
     def test_create_policy_should_activate_free_policy(
@@ -145,7 +141,6 @@ class TestPolicyInvoice(TestCase):
             [(None, Decimal("1000"))],
             [(None, Decimal("0"))],
         ]
-        print("Policy: ", policy)
 
         with patch(
             "policy.services.CALCULATION_RULES",
