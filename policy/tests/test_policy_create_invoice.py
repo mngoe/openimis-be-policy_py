@@ -10,6 +10,7 @@ from product.test_helpers import create_test_product
 import uuid
 from contribution_plan.models import ContributionPlan
 from policy.models import Policy
+from policyholder.models import PolicyHolder
 from policy.services import PolicyService
 from product.models import Product
 from core.test_helpers import create_test_interactive_user
@@ -75,16 +76,16 @@ class TestPolicyInvoice(TestCase):
 
     @patch("policy.services.InvoiceLineItemService")
     @patch("policy.services.InvoiceService")
-    @patch("policy.services.PolicyHolder")
-    @patch("policy.services.Invoice")
+    # @patch("policy.services.PolicyHolder")
+    # @patch("policy.services.Invoice")
     @patch("policy.services.calculate_due_date")
     @patch("invoice.services.invoice.InvoiceService.create")
     def test_create_invoice_should_create_government_invoice(
         self,
         mock_create,
         mock_due_date,
-        mock_invoice,
-        mock_policy_holder,
+        # mock_invoice,
+        # mock_policy_holder,
         mock_invoice_service,
         mock_invoice_line_service,
     ):
@@ -114,10 +115,11 @@ class TestPolicyInvoice(TestCase):
         )
         contribution_plan.save(username=self.user.username)
 
-        # policy_holder = PolicyHolder.objects.create(
-        #     code="AFD",
-        #     trade_name="Agengence Francaise pour le dévelopement"
-        # )
+        policy_holder = PolicyHolder(
+            code="AFD",
+            trade_name="Agengence Francaise pour le dévelopement"
+        )
+        policy_holder.save(username=self.user.username)
 
         # mock_policy_holder.objects.filter.return_value.filter.return_value.first.return_value = (
         #     policy_holder
