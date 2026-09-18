@@ -155,14 +155,6 @@ class PolicyService:
         data = self._clean_mutation_info(data)
         policy_uuid = data.pop('uuid') if 'uuid' in data else None
         policy = Policy.objects.get(uuid=policy_uuid)
-        logger.warning("Update: Config for invoice generation %s",
-                    PolicyConfig.generate_invoice_on_policy)
-        if PolicyConfig.generate_invoice_on_policy and\
-            data.get("signature_date", False) and not is_imported:
-            logger.warning(
-                "Old value of signature date %s", policy.signature_date)
-            if not policy.signature_date:
-                self.create_invoice(data, user, policy)
         policy.save_history()
         reset_policy_before_update(policy)
         [setattr(policy, key, data[key]) for key in data]
@@ -200,14 +192,10 @@ class PolicyService:
             if payer_uuid is not None:
                 premium_data["payer_uuid"] = payer_uuid
             premium_action(premium_data, user)
-        logger.warning("Config for invoice generation %s",
+        logger.warning("Current config for invoice generation %s",
                     PolicyConfig.generate_invoice_on_policy)
-        if PolicyConfig.generate_invoice_on_policy:
-            if is_imported:
-                self.create_invoice(data, user, policy)
-            if not is_imported:
-                if data.get("signature_date", False):
-                    self.create_invoice(data, user, policy)
+        if not is_imported and PolicyConfig.generate_invoice_on_policy:
+            self.create_invoice(data, user, policy)
         return policy
 
     def create_invoice(self, data, user, policy):
@@ -365,7 +353,8 @@ class PolicyService:
                             Q(date_valid_to__date__gte=today.date())
                         ).first()
                         logger.warning("policy holder found %s", policy_holder)
-                        if government_amount > 0 and policy_holder:
+                        if government_amount > 0 and policy_holder and family_amount == 0:
+                            logger.warning("The gevernement pays all the bill alone")
                             values = {
                                 "code": code,
                                 "date_due": date_due,
@@ -419,46 +408,47 @@ class PolicyService:
                                     result)
                         # create Family invoice
                         if family_amount > 0:
-                            invoice_service = InvoiceService(user=user)
-                            gov_values = {
-                                "code": code,
-                                "date_due": date_due,
-                                "date_valid_from": date_due,
-                                "date_valid_to": date_valid_to,
-                                "amount_net": family_amount,
-                                "amount_total": family_amount,
-                                "status": 1,
-                                "cron_job_code": code
-                            }
-                            if family.head_insuree:
-                                gov_values["subject_id"] = family.head_insuree.id
-                                gov_values["subject_type"] = "insuree"
-                                gov_values["thirdparty_id"] = family.head_insuree.id
-                                gov_values["thirdparty_type"] = "insuree"
-                            result_invoice = invoice_service.create(
-                                gov_values
-                            )
-                            logger.warning(
-                                "Invoice family amount created %s",
-                                result_invoice)
-                            if result_invoice["success"] is True:
-                                invoice_line_item_service =\
-                                    InvoiceLineItemService(user=user)
-                                result = invoice_line_item_service.create(
-                                    {
-                                        "invoice_id": result_invoice["data"]["id"],
-                                        "code": code,
-                                        "ledger_account": "Cotisant",
-                                        "quantity": quantity,
-                                        "unit_price": family_amount,
-                                        "amount_net": family_amount,
-                                        "amount_total": family_amount,
-                                        "cron_job_code": code
-                                    }
-                                )
-                                logger.warning(
-                                    "Invoice line amount_family created %s",
-                                    result)
+                            pass
+                            # invoice_service = InvoiceService(user=user)
+                            # gov_values = {
+                            #     "code": code,
+                            #     "date_due": date_due,
+                            #     "date_valid_from": date_due,
+                            #     "date_valid_to": date_valid_to,
+                            #     "amount_net": family_amount,
+                            #     "amount_total": family_amount,
+                            #     "status": 1,
+                            #     "cron_job_code": code
+                            # }
+                            # if family.head_insuree:
+                            #     gov_values["subject_id"] = family.head_insuree.id
+                            #     gov_values["subject_type"] = "insuree"
+                            #     gov_values["thirdparty_id"] = family.head_insuree.id
+                            #     gov_values["thirdparty_type"] = "insuree"
+                            # result_invoice = invoice_service.create(
+                            #     gov_values
+                            # )
+                            # logger.warning(
+                            #     "Invoice family amount created %s",
+                            #     result_invoice)
+                            # if result_invoice["success"] is True:
+                            #     invoice_line_item_service =\
+                            #         InvoiceLineItemService(user=user)
+                            #     result = invoice_line_item_service.create(
+                            #         {
+                            #             "invoice_id": result_invoice["data"]["id"],
+                            #             "code": code,
+                            #             "ledger_account": "Cotisant",
+                            #             "quantity": quantity,
+                            #             "unit_price": family_amount,
+                            #             "amount_net": family_amount,
+                            #             "amount_total": family_amount,
+                            #             "cron_job_code": code
+                            #         }
+                            #     )
+                            #     logger.warning(
+                            #         "Invoice line amount_family created %s",
+                            #         result)
 
     def generate_contribution_receipt(self, product, enroll_date):
         from contribution.models import Premium
