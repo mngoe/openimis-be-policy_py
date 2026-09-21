@@ -163,12 +163,17 @@ class TestPolicyInvoice(TestCase):
     @patch("policy.services.InvoiceLineItemService")
     @patch("policy.services.InvoiceService")
     @patch("policy.services.calculate_due_date")
+    @patch("invoice.services.invoice.InvoiceService.create")
     def test_create_invoice_should_not_create_any_invoice_when_family_amount_is_positive(
         self,
+        mock_create,
         mock_due_date,
         mock_invoice_service,
         mock_invoice_line_service,
     ):
+        mock_create.return_value = {
+            "success": False
+        }
         mock_due_date.return_value = date(2025, 1, 5)
 
         head = create_test_insuree()
