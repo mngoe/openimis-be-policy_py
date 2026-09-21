@@ -192,10 +192,15 @@ class TestPolicyInvoice(TestCase):
         contribution_plan.save(username=self.user.username)
 
         data = {
-            "family_id": family.id,
-            "contribution_plan_id": contribution_plan.uuid,
             "periodicity": "M",
             "payment_day": 5,
+            "family_id": self.family.id,
+            "contribution_plan_id": contribution_plan.uuid,
+            "product": self.product,
+            "audit_user_id": 1,
+            "value": 0,
+            "start_date": date(2025, 1, 1),
+            "enroll_date": date(2025, 1, 1),
         }
 
         policy = self.service.create_policy(data, self.user)
