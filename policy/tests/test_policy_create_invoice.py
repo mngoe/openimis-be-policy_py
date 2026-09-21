@@ -229,3 +229,73 @@ class TestPolicyInvoice(TestCase):
 
         mock_invoice_service.return_value.create.assert_not_called()
         mock_invoice_line_service.return_value.create.assert_not_called()
+
+    @patch("policy.services.InvoiceLineItemService")
+    @patch("policy.services.InvoiceService")
+    @patch("policy.services.calculate_due_date")
+    @patch("invoice.services.invoice.InvoiceService.create")
+    def test_create_invoice_should_not_create_invoice_when_family_and_gov_amount_positive(
+        self,
+        mock_create,
+        mock_due_date,
+        mock_invoice_service,
+        mock_invoice_line_service,
+    ):
+        mock_create.return_value = {
+            "success": False
+        }
+        mock_due_date.return_value = date(2025, 1, 5)
+
+        head = create_test_insuree()
+        family = create_test_family()
+        family.head_insuree = head
+        family.save()
+
+        calculation = str(uuid.uuid4())
+
+        benefit_plan_type = ContentType.objects.get_for_model(Product)
+
+        contribution_plan = ContributionPlan(
+            code="AMS",
+            name="AMS Contribution familiale",
+            calculation=calculation,
+            date_valid_from=date(2020, 1, 1),
+            benefit_plan_type=benefit_plan_type,
+            benefit_plan_id=self.product.id,
+            periodicity=1
+        )
+        contribution_plan.save(username=self.user.username)
+
+        data = {
+            "periodicity": "M",
+            "payment_day": 5,
+            "family_id": self.family.id,
+            "contribution_plan_id": contribution_plan.uuid,
+            "product": self.product,
+            "audit_user_id": 1,
+            "value": 0,
+            "start_date": date(2025, 1, 1),
+            "enroll_date": date(2025, 1, 1),
+        }
+
+        policy = self.service.create_policy(data, self.user)
+
+        calc_rule = MagicMock()
+
+        calc_rule.signal_calculate_event.send.side_effect = [
+            [(None, Decimal("1000"))],       # government_amount
+            [(None, Decimal("1000"))],    # family_amount
+        ]
+
+        with patch(
+            "policy.services.CALCULATION_RULES",
+            [calc_rule]
+        ):
+            self.service.create_invoice(
+                data,
+                self.user,
+                policy,
+            )
+
+        mock_invoice_service.return_value.create.assert_not_called()
+        mock_invoice_line_service.return_value.create.assert_not_called()
