@@ -274,6 +274,7 @@ class TestPolicyInvoice(TestCase):
             "product": self.product,
             "audit_user_id": 1,
             "value": 0,
+            "signature_date": date(2025, 1, 1),
             "start_date": date(2025, 1, 1),
             "enroll_date": date(2025, 1, 1),
         }
