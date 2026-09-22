@@ -408,7 +408,7 @@ class PolicyService:
                                     result)
                         # create Family invoice
                         if family_amount > 0:
-                            pass
+                            logger.warning("Family invoice generation cancelled")
 
     def generate_contribution_receipt(self, product, enroll_date):
         from contribution.models import Premium
