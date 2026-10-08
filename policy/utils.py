@@ -1,5 +1,4 @@
 from django.db.models import Func, DateTimeField
-from django.db.models.functions import Cast, Coalesce
 
 
 class MonthsAdd(Func):

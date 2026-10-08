@@ -1,16 +1,24 @@
 import uuid
-
+import sys
 from core import fields
 from core import models as core_models
 from core.utils import filter_validity
 from core.models import Officer
+from core.apps import ENROLMENT_UBA_LINK_TYPE
+from django.core.cache import caches
+cache = caches['coverage']
 
 from django.conf import settings
 from django.db import models
+from django.apps import apps
 from graphql import ResolveInfo
-from insuree.models import Family
+from insuree.models import Family, InsureePolicy
 from product.models import Product
 from django.utils import timezone as django_tz 
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+
+from location.models import LocationManager
 
 
 class Policy(core_models.VersionedModel):
@@ -36,6 +44,7 @@ class Policy(core_models.VersionedModel):
     # row_id = models.BinaryField(db_column='RowID', blank=True, null=True)
     policy_number = models.CharField(db_column='policyNumber', max_length=50, blank=True, null=True)
     creation_date = models.DateField(db_column='creationDate', default=django_tz.now, blank=True, null=True)
+    pregnancy_age = models.PositiveSmallIntegerField(db_column='PregnancyAge', blank=True, null=True)
 
     @staticmethod
     def get_query_sum_premium(photo=False):
@@ -78,14 +87,15 @@ class Policy(core_models.VersionedModel):
             user = user.context.user
         if settings.ROW_SECURITY and user.is_anonymous:
             return queryset.filter(id=-1)
-        # TODO: check the access to the policy information but how ?
-        #   Policy -> Product -> Location ? Policy -> Insurees -> HF -> Location ?
-        # if settings.ROW_SECURITY:
-        #     dist = UserDistrict.get_user_districts(user._u)
-        #     return queryset.filter(
-        #         health_facility__location_id__in=[l.location.id for l in dist]
-        #     )
-        
+        if settings.ROW_SECURITY:
+            # The "how do we reach the location of a policy ?" the TODO above asked about:
+            # through the family it covers, whose own location is a village. That is also
+            # the path the ENROLMENT narrowing takes, `build_user_location_filter_query`
+            # walking it down to the village the credential is held on.
+            queryset = LocationManager().build_user_location_filter_query(
+                user._u, prefix='family__location__parent__parent',
+                queryset=queryset, loc_types=['D'],
+                link_types=ENROLMENT_UBA_LINK_TYPE)
         return queryset
 
 
@@ -113,6 +123,13 @@ class PolicyRenewal(core_models.VersionedModel):
     audit_user_id = models.IntegerField(db_column='AuditCreateUser', null=True, blank=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['policy', 'validity_to'],
+                name='unique_policy_validity_to_null',
+                condition=models.Q(validity_to__isnull=True)
+            )
+        ]
         managed = True
         db_table = 'tblPolicyRenewals'
 
@@ -126,3 +143,68 @@ class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
     class Meta:
         managed = True
         db_table = "policy_PolicyMutation"
+
+class PolicyRenewalMutation(core_models.UUIDModel, core_models.ObjectMutation):
+    policy_renewal = models.ForeignKey(PolicyRenewal, models.DO_NOTHING,
+                                 related_name='mutations')
+    mutation = models.ForeignKey(
+        core_models.MutationLog, models.DO_NOTHING, related_name='policy_renewals')
+
+    class Meta:
+        managed = True
+        db_table = "policy_renewal_PolicyMutation"
+
+ELIGIBILITY_GENERATION_KEY = "eligibility_generation"
+
+
+def eligibility_cache_key(owner_id):
+    """
+    The eligibility cache entry of a family (or of an insuree without one). The key
+    carries a generation so that every entry can be dropped at once by bumping it,
+    without clearing the cache: the cache aliases share their store.
+    """
+    generation = cache.get(ELIGIBILITY_GENERATION_KEY, 0)
+    return f"eligibility_{generation}_{owner_id}"
+
+
+def invalidate_all_eligibility_cache():
+    try:
+        cache.incr(ELIGIBILITY_GENERATION_KEY)
+    except ValueError:
+        # incr fails on a missing key
+        cache.set(ELIGIBILITY_GENERATION_KEY, 1, None)
+    if hasattr(cache, "delete_pattern"):
+        # django-redis: also free the entries of the previous generations
+        cache.delete_pattern("eligibility_*_*")
+
+
+if "claim" in sys.modules:
+    from claim.models import Claim
+
+    @receiver(post_save, sender=Claim)
+    @receiver(post_delete, sender=Claim)
+    def clean_enquire_cache_claim(sender, instance, *args, **kwargs):
+        cache.delete(eligibility_cache_key(instance.insuree.family_id or instance.insuree.id))
+
+@receiver(post_save, sender=Product)
+@receiver(post_delete, sender=Product)
+def clean_all_enquire_cache_product(sender, instance, *args, **kwargs):
+    invalidate_all_eligibility_cache()
+
+
+@receiver(post_save, sender=Policy)
+@receiver(post_delete, sender=Policy)
+def clean_all_enquire_cache_policy(sender, instance, *args, **kwargs):
+    cache.delete(eligibility_cache_key(instance.family_id))
+
+
+@receiver(post_save, sender=InsureePolicy)
+@receiver(post_delete, sender=InsureePolicy)
+def clean_enquire_cache_insuree_policy(sender, instance, *args, **kwargs):
+    cache.delete(eligibility_cache_key(instance.insuree.family_id or instance.insuree_id))
+
+
+@receiver(post_save, sender=Family)
+@receiver(post_delete, sender=Family)
+def clean_all_enquire_cache_family(sender, instance, *args, **kwargs):
+    cache.delete(eligibility_cache_key(instance.id))

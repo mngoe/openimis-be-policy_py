@@ -12,8 +12,15 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from .validations import validate_idle_policy
+from insuree.models import Family
+from insuree.uba import check_enrolment_perms, has_enrolment_perms, can_query, family_village
 
 logger = logging.getLogger(__name__)
+
+
+def policy_village(policy):
+    """A policy sits where the family it covers does."""
+    return family_village(policy.family) if policy is not None else None
 
 
 class PolicyInputType(OpenIMISMutation.Input):
@@ -32,6 +39,7 @@ class PolicyInputType(OpenIMISMutation.Input):
     is_paid = graphene.Boolean(required=False)
     receipt = graphene.String(required=False)
     payer_uuid = graphene.String(required=False)
+    pregnancy_age = graphene.Int(required=False)
 
 
 class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
@@ -40,8 +48,13 @@ class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
         if type(user) is AnonymousUser or not user.id:
             raise ValidationError(
                 _("mutation.authentication_required"))
-        if not user.has_perms(perms):
-            raise PermissionDenied(_("unauthorized"))
+        # the family the policy covers and, on an update, the one it covered so far
+        villages = [family_village(Family.objects.filter(id=data.get('family_id')).first())]
+        current_policy = Policy.objects.filter(uuid=data['uuid'], validity_to__isnull=True).first() \
+            if data.get('uuid') else None
+        if current_policy is not None:
+            villages.append(policy_village(current_policy))
+        check_enrolment_perms(user, perms, *villages)
         client_mutation_id = data.get("client_mutation_id")
         errors = validate_idle_policy(data)
         if len(errors):
@@ -132,7 +145,8 @@ class SuspendPoliciesMutation(OpenIMISMutation):
                 if type(user) is AnonymousUser or not user.id:
                     raise ValidationError(
                         _("mutation.authentication_required"))
-                if not user.has_perms(PolicyConfig.gql_mutation_suspend_policies_perms):
+                perms = PolicyConfig.gql_mutation_suspend_policies_perms
+                if not can_query(user, perms):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
@@ -143,6 +157,9 @@ class SuspendPoliciesMutation(OpenIMISMutation):
                             'list': [{'message': _(
                                 "policy.mutation.id_does_not_exist") % {'id': policy_uuid}}]
                         }
+                        continue
+                    if not has_enrolment_perms(user, perms, [policy_village(policy)]):
+                        errors.append({'title': policy_uuid, 'list': [{'message': _("unauthorized")}]})
                         continue
                     errors += PolicyService(user).set_suspended(user, policy)
                 if len(errors) == 1:
@@ -166,7 +183,8 @@ class DeletePoliciesMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             with transaction.atomic():
-                if not user.has_perms(PolicyConfig.gql_mutation_delete_policies_perms):
+                perms = PolicyConfig.gql_mutation_delete_policies_perms
+                if not can_query(user, perms):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
@@ -179,6 +197,9 @@ class DeletePoliciesMutation(OpenIMISMutation):
                             'list': [{'message': _(
                                 "policy.validation.id_does_not_exist") % {'id': policy_uuid}}]
                         }
+                        continue
+                    if not has_enrolment_perms(user, perms, [policy_village(policy)]):
+                        errors.append({'title': policy_uuid, 'list': [{'message': _("unauthorized")}]})
                         continue
                     errors += PolicyService(user).set_deleted(policy)
                 if len(errors) == 1:

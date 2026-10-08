@@ -1,4 +1,5 @@
 import logging
+import time
 
 from policy.services import insert_renewals, update_renewals, policy_renewal_sms
 
@@ -25,17 +26,26 @@ def get_policies_for_renewal(interval=None, region=None, district=None, ward=Non
     :param sms_header_template: Also a Django template for the SMS header
     :return: nothing
     """
+    start = time.time()
+    logger.debug("debut du cron!!!!!")
     for item in [region, district, ward, village]:
         if item:
             location = item
             break
     else:
         location = None
-    insert_renewals(date_from, date_to, officer_id=officer, reminding_interval=interval, location_id=location)
+    try:
+        insert_renewals(date_from, date_to, officer_id=officer, reminding_interval=interval, location_id=location)
+    except Exception:
+        # do not go on with update_renewals and the SMS on a partially inserted queue
+        logger.exception("Erreur lors du traitement de renouvellement des polices, cron interrompu")
+        raise
     update_renewals()
     sms_queue = policy_renewal_sms(family_message_template, date_from, date_to, sms_header_template)
     for sms in sms_queue:
         send_sms(sms)
+    elapsed = time.time() - start
+    logger.debug(" FIN DU CRON  Durée totale : %.2f secondes", elapsed)
 
 
 def send_sms(sms):

@@ -3,6 +3,7 @@ from core.schema import (
     OrderedDjangoFilterConnectionField,
     signal_mutation_module_validate,
 )
+from core.utils import filter_validity
 import graphene
 from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch
@@ -15,18 +16,43 @@ from django.utils.translation import gettext as _
 import graphene_django_optimizer as gql_optimizer
 from graphene_django.filter import DjangoFilterConnectionField
 from core.models import Officer
-from .models import PolicyMutation
+from .models import PolicyMutation, Policy
+from django.core.exceptions import ValidationError
 from product.models import Product
-from contribution.models import Premium
 from insuree.models import Family, Insuree, InsureePolicy
-from django.db.models import OuterRef, Subquery, Sum, F, Count
+from django.db.models import OuterRef, Subquery, F, Count
 from location.apps import LocationConfig
+from insuree.uba import can_query
 
 # We do need all queries and mutations in the namespace here.
-from .gql_queries import *  # lgtm [py/polluting-import]
-from .gql_mutations import *  # lgtm [py/polluting-import]
-
+from .gql_queries import (
+    EligibilityGQLType,
+    PolicyByFamilyOrInsureeGQLType,
+    PolicyAndWarningsGQLType,
+    PolicyGQLType,
+    OfficerGQLType,
+    PolicyByFamilyOrInsureeConnection,
+)  # lgtm [py/polluting-import]
+from .gql_mutations import (
+    CreatePolicyMutation,
+    UpdatePolicyMutation,
+    DeletePoliciesMutation,
+    RenewPolicyMutation,
+    SuspendPoliciesMutation
+)
 from .values import policy_values
+
+
+def _check_in_scope(user, perms, model, **lookup):
+    """
+    The by family / by insuree listings read the policies without any row filter. A user
+    holding the rights globally keeps that; one reaching them through the UBA bag must
+    have the family / insuree in their scope (the linked villages).
+    """
+    if user.has_perms(perms):
+        return
+    if not model.get_queryset(model.objects.filter(*filter_validity(), **lookup), user).exists():
+        raise PermissionDenied(_("unauthorized"))
 
 
 class Query(graphene.ObjectType):
@@ -101,7 +127,7 @@ class Query(graphene.ObjectType):
     )
 
     def resolve_policy_values(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_policies_perms):
+        if not can_query(info.context.user, PolicyConfig.gql_query_policies_perms):
             raise PermissionDenied(_("unauthorized"))
 
         product = Product.objects.filter(
@@ -124,17 +150,24 @@ class Query(graphene.ObjectType):
             queryset=Insuree.objects.filter(
                 validity_to__isnull=True).order_by('validity_from')
         )
-        family = Family.objects \
+        # through the row filter: the query is open to UBA users, the family must be in scope
+        family = Family.get_queryset(Family.objects, info.context.user) \
             .prefetch_related(prefetch) \
             .get(id=kwargs.get('family_id'))
         prev_policy = None
         if 'prev_uuid' in kwargs:
             prev_policy = Policy.objects.get(uuid=kwargs.get('prev_uuid'))
-        policy, warnings = policy_values(policy, family, prev_policy, kwargs.get('enrollDate'))
+        policy, warnings = policy_values(
+            policy,
+            family,
+            prev_policy,
+            info.context.user,
+            kwargs.get('enrollDate')
+        )
         return PolicyAndWarningsGQLType(policy=policy, warnings=warnings)
 
     def resolve_policies(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_policies_perms):
+        if not can_query(info.context.user, PolicyConfig.gql_query_policies_perms):
             raise PermissionDenied(_("unauthorized"))
         query = Policy.objects
         if not kwargs.get('showHistory', False):
@@ -203,9 +236,13 @@ class Query(graphene.ObjectType):
         )
 
     def resolve_policies_by_insuree(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_policies_by_insuree_perms) \
+        if not can_query(info.context.user, PolicyConfig.gql_query_policies_by_insuree_perms) \
                 and not info.context.user.has_perms(ClaimConfig.gql_query_claims_perms):
             raise PermissionDenied(_("unauthorized"))
+        if not info.context.user.has_perms(ClaimConfig.gql_query_claims_perms):
+            _check_in_scope(
+                info.context.user, PolicyConfig.gql_query_policies_by_insuree_perms,
+                Insuree, chf_id=kwargs.get('chf_id'))
         req = ByInsureeRequest(
             chf_id=kwargs.get('chf_id'),
             active_or_last_expired_only=kwargs.get(
@@ -218,8 +255,11 @@ class Query(graphene.ObjectType):
         return [Query._to_policy_by_family_or_insuree_item(x) for x in res.items]
 
     def resolve_policies_by_family(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_policies_by_family_perms):
+        if not can_query(info.context.user, PolicyConfig.gql_query_policies_by_family_perms):
             raise PermissionDenied(_("unauthorized"))
+        _check_in_scope(
+            info.context.user, PolicyConfig.gql_query_policies_by_family_perms,
+            Family, uuid=kwargs.get('family_uuid'))
         req = ByFamilyRequest(
             family_uuid=kwargs.get('family_uuid'),
             active_or_last_expired_only=kwargs.get(
@@ -256,7 +296,7 @@ class Query(graphene.ObjectType):
         )
 
     def resolve_policy_eligibility_by_insuree(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_eligibilities_perms):
+        if not can_query(info.context.user, PolicyConfig.gql_query_eligibilities_perms):
             raise PermissionDenied(_("unauthorized"))
         req = EligibilityRequest(
             chf_id=kwargs.get('chfId')
@@ -267,7 +307,7 @@ class Query(graphene.ObjectType):
         )
 
     def resolve_policy_item_eligibility_by_insuree(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_eligibilities_perms):
+        if not can_query(info.context.user, PolicyConfig.gql_query_eligibilities_perms):
             raise PermissionDenied(_("unauthorized"))
         req = EligibilityRequest(
             chf_id=kwargs.get('chfId'),
@@ -279,7 +319,7 @@ class Query(graphene.ObjectType):
         )
 
     def resolve_policy_service_eligibility_by_insuree(self, info, **kwargs):
-        if not info.context.user.has_perms(PolicyConfig.gql_query_eligibilities_perms):
+        if not can_query(info.context.user, PolicyConfig.gql_query_eligibilities_perms):
             raise PermissionDenied(_("unauthorized"))
         req = EligibilityRequest(
             chf_id=kwargs.get('chfId'),
@@ -334,6 +374,7 @@ class Query(graphene.ObjectType):
             return False
         else:
             return True
+
 
 class Mutation(graphene.ObjectType):
     create_policy = CreatePolicyMutation.Field()

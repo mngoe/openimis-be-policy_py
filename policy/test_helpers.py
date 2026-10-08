@@ -1,11 +1,12 @@
 from contribution.models import Premium
-from insuree.models import InsureePolicy, Family, Gender, Insuree
+from insuree.models import InsureePolicy
 from insuree.test_helpers import create_test_insuree
 from policy.models import Policy
 from policy.values import policy_values
 from product.models import Product
-from core.utils import filter_validity
 import datetime
+from core.models import User
+from core.test_helpers import create_test_interactive_user
 
 
 def create_test_policy(product, insuree, link=True, valid=True, custom_props=None, check=False):
@@ -28,6 +29,10 @@ def create_test_policy2(product, insuree, link=True, valid=True, custom_props=No
     :param custom_props: dictionary of custom values for the Policy, when overriding a foreign key, override the _id
     :return: The created Policy and InsureePolicy
     """
+    # a fixed username, so the second call in one test run used to collide on
+    # core_User.username: reuse the user when it is already there
+    user = User.objects.filter(username="tesAdmin").first() \
+        or create_test_interactive_user(username="tesAdmin")
     policy = Policy.objects.create(
         **{
             "family": insuree.family,
@@ -58,7 +63,10 @@ def create_test_policy2(product, insuree, link=True, valid=True, custom_props=No
         insuree_policy = None
 
     # Was added for OMT-333 but breaks tests that explicitly call policy_values
-    policy, warnings = policy_values(policy, insuree.family, None)
+    policy, warnings = policy_values(
+        policy, insuree.family, None, user,
+        datetime.datetime.strptime("2024-02-13", "%Y-%m-%d"), members=[insuree]
+    )
     if check and warnings:
         raise Exception("Policy has warnings: {}".format(warnings))
     return policy, insuree_policy
@@ -135,7 +143,11 @@ def create_test_policy_with_IPs(product, insuree, valid=True, policy_props=None,
 def create_test_insuree_for_policy(with_family=True, is_head=False, custom_props=None, family_custom_props=None):
     # To establish the mandatory reference between "Insuree" and "Family" objects, we can insert the "Family" object
     # with a temporary ID and later update it to associate with the respective "Insuree" object.
-    insuree=  create_test_insuree(with_family=with_family, is_head=is_head, custom_props=custom_props, family_custom_props=family_custom_props)
-
+    insuree=  create_test_insuree(
+        with_family=with_family,
+        is_head=is_head,
+        custom_props=custom_props,
+        family_custom_props=family_custom_props
+    )
 
     return insuree, insuree.family
