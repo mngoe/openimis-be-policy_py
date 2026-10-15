@@ -246,7 +246,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         response = self.query(
             '''
             query policiesByFamily($familyUuid: String!, $targetDate:  Date! ) {
-                policiesByFamily(orderBy: "expiryDate",activeOrLastExpiredOnly: true,familyUuid:$familyUuid ,targetDate: $targetDate,first: 5)
+                policiesByFamily(orderBy: "expiryDate",activeOrLastExpiredOnly: true,familyUuid:$familyUuid ,showDeleted: true, targetDate: $targetDate,first: 5)
                 {
                     totalCount
                     pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
