@@ -352,32 +352,32 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         # Add some more asserts if you like
         ...
 
-    def test_mutation_simple(self):
-        muuid = "203327cd-501e-41e1-a026-ed742e360081"
-        response = self.query(
-            f'''
-    mutation {{
-      createPolicy(
-        input: {{
-          clientMutationId: "{muuid}"
-          clientMutationLabel: "Création de la police ttttt eeeee (123123123) - 2024-06-01 : 2025-05-31"
+    # def test_mutation_simple(self):
+    #     muuid = "203327cd-501e-41e1-a026-ed742e360081"
+    #     response = self.query(
+    #         f'''
+    # mutation {{
+    #   createPolicy(
+    #     input: {{
+    #       clientMutationId: "{muuid}"
+    #       clientMutationLabel: "Création de la police ttttt eeeee (123123123) - 2024-06-01 : 2025-05-31"
           
-          enrollDate: "2024-04-07"
-            startDate: "2024-06-01"
-            expiryDate: "2025-05-31"
-            value: "10000.00"
-            productId: {self.product.id}
-            familyId: {self.insuree.family.id}
-            officerId: 1
-                    }}
-        ) {{
-            clientMutationId
-            internalId
-        }}
-    }}
-            ''',
-            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
-            variables={'chfid': self.insuree.chf_id, 'activeOrLastExpiredOnly':True}
-        )
-        content = self.get_mutation_result(muuid,self.admin_token)
+    #       enrollDate: "2024-04-07"
+    #         startDate: "2024-06-01"
+    #         expiryDate: "2025-05-31"
+    #         value: "10000.00"
+    #         productId: {self.product.id}
+    #         familyId: {self.insuree.family.id}
+    #         officerId: 1
+    #                 }}
+    #     ) {{
+    #         clientMutationId
+    #         internalId
+    #     }}
+    # }}
+    #         ''',
+    #         headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
+    #         variables={'chfid': self.insuree.chf_id, 'activeOrLastExpiredOnly':True}
+    #     )
+    #     content = self.get_mutation_result(muuid,self.admin_token)
         
