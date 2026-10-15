@@ -71,6 +71,7 @@ class Query(graphene.ObjectType):
         show_history=graphene.Boolean(),
         order_by=graphene.String(),
         target_date=graphene.Date(),
+        show_deleted=graphene.Boolean(),
     )
     # TODO: refactoring
     # Eligibility is calculated for a Policy... which is bound to a Family (not an Insuree)
@@ -235,6 +236,7 @@ class Query(graphene.ObjectType):
             family_uuid=kwargs.get('family_uuid'),
             active_or_last_expired_only=kwargs.get(
                 'active_or_last_expired_only', False),
+            show_deleted=kwargs.get('show_deleted', False),
             show_history=kwargs.get('show_history', False),
             order_by=kwargs.get('order_by', None),
             target_date=kwargs.get('target_date', None)
