@@ -303,6 +303,35 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         # Still get the policy even when validity_to is not null because of showDeleted true
         self.assertResponseNoErrors(response)
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
+
+        response = self.query(
+            '''
+            query policiesByFamily($familyUuid: String!, $targetDate:  Date! ) {
+                policiesByFamily(orderBy: "expiryDate",activeOrLastExpiredOnly: true,familyUuid:$familyUuid ,showDeleted: true, targetDate: $targetDate,first: 5)
+                {
+                    totalCount
+                    pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
+                    edges
+                    {
+                        node
+                        {
+                            policyUuid,productCode,productName,officerCode,officerName,enrollDate,effectiveDate,startDate,expiryDate,status,policyValue,balance,ded,dedInPatient,dedOutPatient,ceiling,ceilingInPatient,ceilingOutPatient
+                        }
+                    }   
+                }
+            } 
+            ''',
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
+            variables={'familyUuid': str(self.insuree.family.uuid), 'targetDate':self.policy.effective_date.strftime("%Y-%m-%d")}
+        )
+
+        content = json.loads(response.content)
+        
+        
+
+        # Even if show deleted is present, if targerDate is present we show polices only on that targetDate
+        self.assertResponseNoErrors(response)
+        self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
         self.policy.validity_to = None
         self.policy.save()
