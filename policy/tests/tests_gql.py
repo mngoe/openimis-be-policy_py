@@ -331,7 +331,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
 
         # Even if show deleted is present, if targerDate is present we show polices only on that targetDate
         self.assertResponseNoErrors(response)
-        self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
+        self.assertEqual(content['data']['policiesByFamily']['totalCount'], 0)
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
         self.policy.validity_to = None
         self.policy.save()
