@@ -300,3 +300,7 @@ class TestPolicyInvoice(TestCase):
 
         mock_invoice_service.return_value.create.assert_not_called()
         mock_invoice_line_service.return_value.create.assert_not_called()
+
+        self.service.update_policy(data, self.user)
+        mock_invoice_service.return_value.create.assert_not_called()
+        mock_invoice_line_service.return_value.create.assert_not_called()

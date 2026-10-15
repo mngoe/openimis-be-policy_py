@@ -354,7 +354,7 @@ class PolicyService:
                         ).first()
                         logger.warning("policy holder found %s", policy_holder)
                         if government_amount > 0 and policy_holder and family_amount == 0:
-                            logger.warning("The gevernement pays all the bill alone")
+                            logger.warning("The government pays all the bill alone")
                             values = {
                                 "code": code,
                                 "date_due": date_due,
@@ -408,7 +408,7 @@ class PolicyService:
                                     result)
                         # create Family invoice
                         if family_amount > 0:
-                            pass
+                            logger.warning("Family invoice generation cancelled")
 
     def generate_contribution_receipt(self, product, enroll_date):
         from contribution.models import Premium

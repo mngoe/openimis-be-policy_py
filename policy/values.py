@@ -217,6 +217,7 @@ def set_value(policy, family, prev_policy, user):
     policy.value = Decimal(contributions + general_assembly + registration)
     discount(policy, prev_policy)
     instance = False
+    print("Pan : ", policy.contribution_plan)
     if policy.contribution_plan:
         if isinstance(policy.contribution_plan, (str, UUID)):
             contribution_plan_uuid = policy.contribution_plan
