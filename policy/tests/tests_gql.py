@@ -366,6 +366,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             periodicity=1
         )
         contribution_plan.save(username=self.admin_user.username)
+        plan_id = str(contribution_plan.id)
         response = self.query(
             f'''
             mutation {{
@@ -380,7 +381,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
                     value: "10000.00"
                     productId: {self.product.id}
                     familyId: {self.insuree.family.id}
-                    contributionPlanId: {contribution_plan.id}
+                    contributionPlanId: {plan_id}
                     officerId: 1
                             }}
                 ) {{
