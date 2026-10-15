@@ -273,10 +273,8 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
 
-        print("validity to before ", self.insuree.family.validity_to)
         self.insuree.family.validity_to = "2019-01-01"
         self.insuree.family.save()
-        print("validity to after ", self.insuree.family.validity_to)
         response = self.query(
             '''
             query policiesByFamily($familyUuid: String!) {
@@ -308,8 +306,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
         self.insuree.family.validity_to = None
         self.insuree.family.save()
-        print("validity to after rollback ", self.insuree.family.validity_to)
-       
    
     def test_insuree_policy_query(self):
         
