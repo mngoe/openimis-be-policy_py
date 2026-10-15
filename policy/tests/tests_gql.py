@@ -29,6 +29,10 @@ from location.test_helpers import (
     create_test_village
 )
 from uuid import UUID
+from contribution_plan.models import ContributionPlan
+from django.contrib.contenttypes.models import ContentType
+from product.models import Product
+import datetime
 @dataclass
 class DummyContext:
     """ Just because we need a context to generate. """
@@ -350,34 +354,46 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertResponseNoErrors(response)
 
         # Add some more asserts if you like
-        ...
 
-    # def test_mutation_simple(self):
-    #     muuid = "203327cd-501e-41e1-a026-ed742e360081"
-    #     response = self.query(
-    #         f'''
-    # mutation {{
-    #   createPolicy(
-    #     input: {{
-    #       clientMutationId: "{muuid}"
-    #       clientMutationLabel: "Création de la police ttttt eeeee (123123123) - 2024-06-01 : 2025-05-31"
-          
-    #       enrollDate: "2024-04-07"
-    #         startDate: "2024-06-01"
-    #         expiryDate: "2025-05-31"
-    #         value: "10000.00"
-    #         productId: {self.product.id}
-    #         familyId: {self.insuree.family.id}
-    #         officerId: 1
-    #                 }}
-    #     ) {{
-    #         clientMutationId
-    #         internalId
-    #     }}
-    # }}
-    #         ''',
-    #         headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
-    #         variables={'chfid': self.insuree.chf_id, 'activeOrLastExpiredOnly':True}
-    #     )
-    #     content = self.get_mutation_result(muuid,self.admin_token)
-        
+
+    def test_mutation_simple(self):
+        muuid = "203327cd-501e-41e1-a026-ed742e360081"
+        benefit_plan_type = ContentType.objects.get_for_model(Product)
+        product = create_test_product("TEST_1")
+        contribution_plan = ContributionPlan(
+            code="AMS",
+            name="AMS Subvention totale",
+            calculation= "203327cd-501e-41e1-a026-ed742e360081",
+            date_valid_from=datetime.date(2020, 1, 1),
+            benefit_plan_type=benefit_plan_type,
+            benefit_plan_id=product.id,
+            periodicity=1
+        )
+        contribution_plan.save(username=self.admin_user.username)
+        response = self.query(
+            f'''
+            mutation {{
+            createPolicy(
+                input: {{
+                clientMutationId: "{muuid}"
+                clientMutationLabel: "Création de la police ttttt eeeee (123123123) - 2024-06-01 : 2025-05-31"
+                
+                enrollDate: "2024-04-07"
+                    startDate: "2024-06-01"
+                    expiryDate: "2025-05-31"
+                    value: "10000.00"
+                    productId: {self.product.id}
+                    familyId: {self.insuree.family.id}
+                    contributionPlanId: {contribution_plan.id}
+                    officerId: 1
+                            }}
+                ) {{
+                    clientMutationId
+                    internalId
+                }}
+            }}
+            ''',
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
+            variables={'chfid': self.insuree.chf_id, 'activeOrLastExpiredOnly':True}
+        )
+        content = self.get_mutation_result(muuid,self.admin_token)
