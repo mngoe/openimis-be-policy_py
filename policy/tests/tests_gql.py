@@ -381,7 +381,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
                     value: "10000.00"
                     productId: {self.product.id}
                     familyId: {self.insuree.family.id}
-                    contributionPlanId: {plan_id}
+                    contributionPlanId: "{plan_id}"
                     officerId: 1
                             }}
                 ) {{
