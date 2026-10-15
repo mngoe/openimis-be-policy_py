@@ -274,7 +274,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
 
         self.policy.validity_to = "2019-01-01"
-        self.policy.policy.save()
+        self.policy.save()
         response = self.query(
             '''
             query policiesByFamily($familyUuid: String!) {
