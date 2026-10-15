@@ -275,8 +275,8 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         print("validity to after ", self.insuree.family.validity_to)
         response = self.query(
             '''
-            query policiesByFamily($familyUuid: String!, $targetDate:  Date! ) {
-                policiesByFamily(orderBy: "expiryDate",activeOrLastExpiredOnly: true,familyUuid:$familyUuid , showDeleted: true,targetDate: $targetDate,first: 5)
+            query policiesByFamily($familyUuid: String!) {
+                policiesByFamily(orderBy: "expiryDate",activeOrLastExpiredOnly: true,familyUuid:$familyUuid , showDeleted: true,first: 5)
                 {
                     totalCount
                     pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
@@ -291,7 +291,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             } 
             ''',
             headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
-            variables={'familyUuid': str(self.insuree.family.uuid), 'targetDate':self.policy.effective_date.strftime("%Y-%m-%d")}
+            variables={'familyUuid': str(self.insuree.family.uuid)}
         )
 
         content = json.loads(response.content)
