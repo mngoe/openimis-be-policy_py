@@ -269,6 +269,42 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
 
+        print("validity to before ", self.insuree.family.validity_to)
+        self.insuree.family.validity_to = "2019-01-01"
+        self.insuree.family.save()
+        print("validity to after ", self.insuree.family.validity_to)
+        response = self.query(
+            '''
+            query policiesByFamily($familyUuid: String!, $targetDate:  Date! ) {
+                policiesByFamily(orderBy: "expiryDate",activeOrLastExpiredOnly: true,familyUuid:$familyUuid , showDeleted: true,targetDate: $targetDate,first: 5)
+                {
+                    totalCount
+                    pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
+                    edges
+                    {
+                        node
+                        {
+                            policyUuid,productCode,productName,officerCode,officerName,enrollDate,effectiveDate,startDate,expiryDate,status,policyValue,balance,ded,dedInPatient,dedOutPatient,ceiling,ceilingInPatient,ceilingOutPatient
+                        }
+                    }   
+                }
+            } 
+            ''',
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
+            variables={'familyUuid': str(self.insuree.family.uuid), 'targetDate':self.policy.effective_date.strftime("%Y-%m-%d")}
+        )
+
+        content = json.loads(response.content)
+        
+        
+
+        # Still get the policy even when validity_to is not null because of showDeleted true
+        self.assertResponseNoErrors(response)
+        self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
+        self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
+        self.insuree.family.validity_to = None
+        self.insuree.family.save()
+        print("validity to after rollback ", self.insuree.family.validity_to)
        
    
     def test_insuree_policy_query(self):
