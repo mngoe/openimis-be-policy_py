@@ -661,7 +661,8 @@ class FilteredPoliciesService(object):
             if req.target_date: 
                 res = res.filter(*core.filter_validity(), expiry_date__gt = req.target_date, effective_date__lte = req.target_date)
             else:
-                res = res.filter(*core.filter_validity())
+                if not getattr(req, 'show_deleted', False):
+                    res = res.filter(*core.filter_validity())
         if req.active_or_last_expired_only:
             # sort on status, so that any active policy (status = 2) pops up...
             res = res.annotate(not_null_expiry_date=Coalesce('expiry_date', py_date.max)) \
@@ -703,12 +704,13 @@ class ByInsureeService(FilteredPoliciesService):
 @core.comparable
 class ByFamilyRequest(object):
 
-    def __init__(self, family_uuid, active_or_last_expired_only=False, show_history=False, order_by=None, target_date=None):
+    def __init__(self, family_uuid, active_or_last_expired_only=False, show_history=False, order_by=None, target_date=None, show_deleted=False):
         self.family_uuid = family_uuid
         self.active_or_last_expired_only = active_or_last_expired_only
         self.show_history = show_history
         self.order_by = order_by
         self.target_date = target_date
+        self.show_deleted = show_deleted
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
