@@ -10,6 +10,9 @@ from core.test_helpers import create_test_interactive_user
 from core.models import User
 from django.core.exceptions import ObjectDoesNotExist
 import datetime
+import uuid
+from product.test_helpers import create_test_product
+from django.contrib.contenttypes.models import ContentType
 
 
 def create_test_policy(product, insuree, link=True, valid=True, custom_props=None, check=False, contribution_plan=None):
@@ -32,6 +35,23 @@ def create_test_policy2(product, insuree, link=True, valid=True, custom_props=No
     :param custom_props: dictionary of custom values for the Policy, when overriding a foreign key, override the _id
     :return: The created Policy and InsureePolicy
     """
+    product = create_test_product("TEST")
+    try:
+        user = User.objects.get(username='TestInteractiveTest')
+    except ObjectDoesNotExist:
+        user = create_test_interactive_user()
+    benefit_plan_type = ContentType.objects.get_for_model(Product)
+    if not contribution_plan:
+        contribution_plan = ContributionPlan(
+            code="AMS",
+            name="AMS Subvention totale",
+            calculation= str(uuid.uuid4()),
+            date_valid_from=datetime.date(2020, 1, 1),
+            benefit_plan_type=benefit_plan_type,
+            benefit_plan_id=product.id,
+            periodicity=1
+        )
+        contribution_plan.save(username=user.username)
     policy = Policy.objects.create(
         **{
             "family": insuree.family,
