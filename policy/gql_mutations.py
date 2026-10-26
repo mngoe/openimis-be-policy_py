@@ -32,6 +32,7 @@ class PolicyInputType(OpenIMISMutation.Input):
     is_paid = graphene.Boolean(required=False)
     receipt = graphene.String(required=False)
     payer_uuid = graphene.String(required=False)
+    pregnancy_age = graphene.Int(required=False)
 
 
 class CreateRenewOrUpdatePolicyMutation(OpenIMISMutation):
@@ -151,6 +152,42 @@ class SuspendPoliciesMutation(OpenIMISMutation):
         except Exception as exc:
             return [{
                 'message': _("policy.mutation.failed_to_suspend_policy"),
+                'detail': str(exc),
+                'exc': exc}]
+
+class ForcePoliciesExpirationMutation(OpenIMISMutation):
+    _mutation_module = "policy"
+    _mutation_class = "ForcePolicyExpirationMutation"
+
+    class Input(OpenIMISMutation.Input):
+        uuids = graphene.List(graphene.String)
+
+    @classmethod
+    def async_mutate(cls, user, **data):
+        try:
+            with transaction.atomic():
+                if type(user) is AnonymousUser or not user.id:
+                    raise ValidationError(
+                        _("mutation.authentication_required"))
+                if not user.has_perms(PolicyConfig.gql_mutation_force_expiration_perms):
+                    raise PermissionDenied(_("unauthorized"))
+                errors = []
+                for policy_uuid in data["uuids"]:
+                    policy = Policy.objects.filter(uuid=policy_uuid).first()
+                    if policy is None:
+                        errors += {
+                            'title': policy_uuid,
+                            'list': [{'message': _(
+                                "policy.mutation.id_does_not_exist") % {'id': policy_uuid}}]
+                        }
+                        continue
+                    errors += PolicyService(user).set_expiration_forced(user, policy)
+                if len(errors) == 1:
+                    errors = errors[0]['list']
+                return errors
+        except Exception as exc:
+            return [{
+                'message': _("policy.mutation.failed_to_force_policy_expiration"),
                 'detail': str(exc),
                 'exc': exc}]
 

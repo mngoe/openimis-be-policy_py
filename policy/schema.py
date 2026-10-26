@@ -3,6 +3,7 @@ from core.schema import (
     OrderedDjangoFilterConnectionField,
     signal_mutation_module_validate,
 )
+from core.utils import filter_validity
 import graphene
 from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch
@@ -15,17 +16,30 @@ from django.utils.translation import gettext as _
 import graphene_django_optimizer as gql_optimizer
 from graphene_django.filter import DjangoFilterConnectionField
 from core.models import Officer
-from .models import PolicyMutation
+from .models import PolicyMutation, Policy
+from django.core.exceptions import ValidationError
 from product.models import Product
-from contribution.models import Premium
 from insuree.models import Family, Insuree, InsureePolicy
-from django.db.models import OuterRef, Subquery, Sum, F, Count
+from django.db.models import OuterRef, Subquery, F, Count
 from location.apps import LocationConfig
 
 # We do need all queries and mutations in the namespace here.
-from .gql_queries import *  # lgtm [py/polluting-import]
-from .gql_mutations import *  # lgtm [py/polluting-import]
-
+from .gql_queries import (
+    EligibilityGQLType,
+    PolicyByFamilyOrInsureeGQLType,
+    PolicyAndWarningsGQLType,
+    PolicyGQLType,
+    OfficerGQLType,
+    PolicyByFamilyOrInsureeConnection,
+)  # lgtm [py/polluting-import]
+from .gql_mutations import (
+    CreatePolicyMutation,
+    UpdatePolicyMutation,
+    DeletePoliciesMutation,
+    RenewPolicyMutation,
+    SuspendPoliciesMutation,
+    ForcePoliciesExpirationMutation
+)
 from .values import policy_values
 
 
@@ -130,7 +144,13 @@ class Query(graphene.ObjectType):
         prev_policy = None
         if 'prev_uuid' in kwargs:
             prev_policy = Policy.objects.get(uuid=kwargs.get('prev_uuid'))
-        policy, warnings = policy_values(policy, family, prev_policy, kwargs.get('enrollDate'))
+        policy, warnings = policy_values(
+            policy,
+            family,
+            prev_policy,
+            info.context.user,
+            kwargs.get('enrollDate')
+        )
         return PolicyAndWarningsGQLType(policy=policy, warnings=warnings)
 
     def resolve_policies(self, info, **kwargs):
@@ -335,12 +355,14 @@ class Query(graphene.ObjectType):
         else:
             return True
 
+
 class Mutation(graphene.ObjectType):
     create_policy = CreatePolicyMutation.Field()
     update_policy = UpdatePolicyMutation.Field()
     delete_policies = DeletePoliciesMutation.Field()
     renew_policy = RenewPolicyMutation.Field()
     suspend_policies = SuspendPoliciesMutation.Field()
+    force_policies_expiration = ForcePoliciesExpirationMutation.Field()
 
 
 def on_policy_mutation(sender, **kwargs):

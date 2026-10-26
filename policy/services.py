@@ -1,9 +1,9 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime as py_datetime, date as py_date
-
+from django.core.cache import caches
 import core
-from claim.models import ClaimService, Claim, ClaimItem
+from claim.models import Claim, ClaimItem
 from django import dispatch
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import connection
@@ -12,17 +12,13 @@ from django.db.models.functions import Coalesce
 from django.template import Template, Context
 from django.utils.translation import gettext as _
 from graphene.utils.str_converters import to_snake_case
-
-from policy.utils import get_queryset_valid_at_date
 from core.signals import register_service_signal
-from insuree.models import Insuree, Family, InsureePolicy
+from insuree.models import Insuree, InsureePolicy
 from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.utils import MonthsAdd
 from product.models import Product
-import json, requests
-
 from .models import Policy, PolicyRenewal
 from cs.models import ChequeImportLine
 
@@ -37,6 +33,8 @@ def reset_policy_before_update(policy):
     policy.product_id = None
     policy.family_id = None
     policy.officer_id = None
+
+cache = caches['coverage']
 
 
 class PolicyService:
@@ -68,14 +66,20 @@ class PolicyService:
             if product.age_minimal:
                 if(age_patient < product.age_minimal):
                     # The insuree's age is lower than the min age
-                    raise Exception("L'assuré(e) avec l'age %s n'a pas encore l'age minimal requis renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_minimal)))
+                    raise Exception(
+                        f"L'assuré(e) avec l'âge {age_patient} n'a pas encore l'âge minimal requis "
+                        f"renseigné sur le produit qui est de {product.age_minimal}"
+                    )
             if product.age_maximal:
                 diff = product.age_maximal - age_patient
                 print("diff ", diff)
                 if(diff < 0):
                     # The insuree's age is greater than the max age
-                    raise Exception("L'assuré(e) avec l'age %s a dépassé(e) l'age maximal renseigné sur le produit qui est de %s" % (str(age_patient), str(product.age_maximal)))
-                from dateutil.relativedelta import relativedelta
+                    raise Exception(
+                        f"L'assuré(e) avec l'âge {age_patient} a dépassé(e) l'âge maximal "
+                        f"renseigné sur le produit qui est de {product.age_maximal}"
+                    )
+                # from dateutil.relativedelta import relativedelta
                 # exp_date = the_date + relativedelta(years=+diff)
                 # print("exp_date ", exp_date)
                 # data["expiry_date"] = exp_date
@@ -93,11 +97,14 @@ class PolicyService:
                 print("errors ", errors)
                 if len(errors):
                     raise Exception((errors[0]["message"]))
-                cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number, chequeImportLineStatus='new')
+                cheques = ChequeImportLine.objects.filter(
+                    chequeImportLineCode=policy_number,
+                    chequeImportLineStatus='New'
+                )
                 print("cheques ", cheques)
                 if cheques:
                     current_cheque = cheques[0]
-                    setattr(current_cheque, "chequeImportLineStatus", "used")
+                    setattr(current_cheque, "chequeImportLineStatus", "Used")
                     current_cheque.save()
             return self.create_policy(data, user)
 
@@ -129,6 +136,12 @@ class PolicyService:
                 program = product.program
                 if program:
                     for police in Policy.objects.filter(family=data["family_id"]).filter(validity_to__isnull=True):
+                        if program.code != "CCS":
+                            if police.product.program == program and police.status == Policy.STATUS_IDLE:
+                                raise Exception(
+                                    "Vous ne pouvez pas avoir plusieurs polices en attente "
+                                    "pour un même programme pour un même assuré"
+                                    )
                         if police.status == Policy.STATUS_ACTIVE:
                             prod = Product.objects.get(id=police.product.id)
                             if prod:
@@ -136,7 +149,6 @@ class PolicyService:
                                     raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme")
                                 # If the policy that the user had previously is a cheque sante,
                                 # he cannot have a fagep policy
-                                print("Comparaison ", prod.program.code, " et ", program.code)
                                 if prod.program.code == "CCS" and program.code == "PAL":
                                     raise Exception("L'assuré ne peux pas avoir un proegramme FAGEP"\
                                     " s'il a déja un proegramme Cheque santé actif")
@@ -149,7 +161,8 @@ class PolicyService:
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
         # we activate the policy immediatelly
-        if data['value'] == 0:
+        print("value is ", data['value'])
+        if int(data['value']) == 0:
             setattr(policy, "status",2)
             setattr(policy, "effective_date", data['start_date'])
         policy.save()
@@ -202,6 +215,23 @@ class PolicyService:
                 'title': policy.uuid,
                 'list': [{
                     'message': _("policy.mutation.failed_to_suspend_policy") % {'uuid': policy.uuid},
+                    'detail': policy.uuid}]
+            }
+
+    def set_expiration_forced(self, user, policy):
+        try:
+            policy.save_history()
+            policy.status = Policy.STATUS_EXPIRED
+            policy.expiry_date = py_datetime.now().date()
+            policy.stage = Policy.STAGE_EXPIRATION_FORCED
+            policy.audit_user_id = user.id_for_audit
+            policy.save()
+            return []
+        except Exception as exc:
+            return {
+                'title': policy.uuid,
+                'list': [{
+                    'message': _("policy.mutation.failed_to_force_policy_expiration") % {'uuid': policy.uuid},
                     'detail': policy.uuid}]
             }
 
@@ -742,9 +772,20 @@ class NativeEligibilityService(object):
 
 
     def request(self, req, response):
-        insuree = Insuree.get_queryset(None, self.user)\
-            .filter(validity_to__isnull=True)\
-            .get(chf_id=req.chf_id)  # Will throw an exception if not found
+        def get_total_filter(category):
+            return Q(
+                insuree__claim__status__gt=Claim.STATUS_ENTERED,
+                insuree__claim__category=category,
+                *core.filter_validity(prefix="insuree__"),
+                *core.filter_validity(prefix="insuree__claim__"),
+                *core.filter_validity(prefix="insuree__claim__services__"),
+            ) & (  # Not sure this one is necessary
+                Q(insuree__claim__services__rejection_reason=0)
+                | Q(insuree__claim__services__rejection_reason__isnull=True)
+            )
+        insuree = Insuree.get_queryset(None, self.user).get(
+            chf_id=req.chf_id, *core.filter_validity()
+        )  # Will throw an exception if not found
         now = core.datetime.datetime.now()
         eligibility = response
 
@@ -766,24 +807,23 @@ class NativeEligibilityService(object):
         eligibility.min_date_item = min_date_item
         eligibility.item_left = items_left
 
-        def get_total_filter(category):
-            return (
-                Q(insuree__claim__category=category)
-                & Q(insuree__validity_to__isnull=True)  # Not sure this one is necessary
-                & Q(insuree__claim__validity_to__isnull=True)
-                & Q(insuree__claim__services__validity_to__isnull=True)
-                & Q(insuree__claim__status__gt=Claim.STATUS_ENTERED)
-                & (Q(insuree__claim__services__rejection_reason=0)
-                   | Q(insuree__claim__services__rejection_reason__isnull=True))
-            )
-
         # InsPol -> Policy -> Product -> dedrem
-        result = InsureePolicy.objects \
-            .filter(policy__product__validity_to__isnull=True) \
-            .filter(policy__validity_to__isnull=True) \
-            .filter(validity_to__isnull=True) \
-            .filter(insuree=insuree) \
-            .values("policy__product_id",
+        cached_data = cache.get(
+            f"eligibility_{insuree.family_id or insuree.id}"
+        )
+
+        print("cached_data ", cached_data) 
+        if cached_data and str(insuree.id) in cached_data:
+            result = cached_data[str(insuree.id)]
+        else:
+            result = (
+                InsureePolicy.objects.filter(
+                    insuree=insuree,
+                    *core.filter_validity(prefix="policy__product__"),
+                    *core.filter_validity(prefix="policy__"),
+                )
+                .values(
+                    "policy__product_id",
                     "policy__product__max_no_surgery",
                     "policy__product__max_amount_surgery",
                     "policy__product__max_amount_consultation",
@@ -791,35 +831,102 @@ class NativeEligibilityService(object):
                     "policy__product__max_amount_delivery",
                     "policy__product__max_amount_antenatal",
                     "policy__product__max_amount_hospitalization",
-                    ) \
-            .annotate(total_admissions=Coalesce(Count("insuree__claim",
-                                                      filter=get_total_filter(Service.CATEGORY_HOSPITALIZATION),
-                                                      distinct=True), 0)) \
-            .annotate(total_admissions_left=F("policy__product__max_no_hospitalization")
-                                            - F("total_admissions")) \
-            .annotate(total_consultations=Coalesce(Count("insuree__claim",
-                                                         filter=get_total_filter(Service.CATEGORY_CONSULTATION),
-                                                         distinct=True), 0)) \
-            .annotate(total_consultations_left=F("policy__product__max_no_consultation")
-                                               - F("total_consultations")) \
-            .annotate(total_surgeries=Coalesce(Count("insuree__claim",
-                                                     filter=get_total_filter(Service.CATEGORY_SURGERY),
-                                                     distinct=True), 0)) \
-            .annotate(total_surgeries_left=F("policy__product__max_no_surgery") - F("total_surgeries")) \
-            .annotate(total_deliveries=Coalesce(Count("insuree__claim",
-                                                      filter=get_total_filter(Service.CATEGORY_DELIVERY),
-                                                      distinct=True), 0)) \
-            .annotate(total_deliveries_left=F("policy__product__max_no_delivery") - F("total_deliveries")) \
-            .annotate(total_antenatal=Coalesce(Count("insuree__claim",
-                                                     filter=get_total_filter(Service.CATEGORY_ANTENATAL),
-                                                     distinct=True), 0)) \
-            .annotate(total_antenatal_left=F("policy__product__max_no_antenatal") - F("total_antenatal")) \
-            .annotate(total_visits=Coalesce(Count("insuree__claim",
-                                                  filter=get_total_filter(Service.CATEGORY_VISIT),
-                                                  distinct=True), 0)) \
-            .annotate(total_visits_left=F("policy__product__max_no_visits") - F("total_visits")) \
-            .order_by('-expiry_date')\
-            .first()
+                )
+                .annotate(
+                    total_admissions=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_HOSPITALIZATION),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_admissions_left=F("policy__product__max_no_hospitalization")
+                    - F("total_admissions")
+                )
+                .annotate(
+                    total_consultations=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_CONSULTATION),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_consultations_left=F("policy__product__max_no_consultation")
+                    - F("total_consultations")
+                )
+                .annotate(
+                    total_surgeries=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_SURGERY),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_surgeries_left=F("policy__product__max_no_surgery")
+                    - F("total_surgeries")
+                )
+                .annotate(
+                    total_deliveries=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_DELIVERY),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_deliveries_left=F("policy__product__max_no_delivery")
+                    - F("total_deliveries")
+                )
+                .annotate(
+                    total_antenatal=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_ANTENATAL),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_antenatal_left=F("policy__product__max_no_antenatal")
+                    - F("total_antenatal")
+                )
+                .annotate(
+                    total_visits=Coalesce(
+                        Count(
+                            "insuree__claim",
+                            filter=get_total_filter(Service.CATEGORY_VISIT),
+                            distinct=True,
+                        ),
+                        0,
+                    )
+                )
+                .annotate(
+                    total_visits_left=F("policy__product__max_no_visits")
+                    - F("total_visits")
+                )
+                .order_by("-expiry_date")
+                .first()
+            )
+            if not cached_data:
+                cached_data = {}
+                cached_data[str(insuree.id)] = result
+            cache.set(
+                f"eligibility_{insuree.family_id or insuree.id}",
+                result,
+                None,
+            )
 
         if result is None:
             eligibility.total_admissions_left = 0
@@ -838,50 +945,93 @@ class NativeEligibilityService(object):
             return eligibility
 
         eligibility.prod_id = result["policy__product_id"]
-        total_admissions_left = result["total_admissions_left"] \
-            if result["total_admissions_left"] is None or result["total_admissions_left"] >= 0 else 0
-        total_consultations_left = result["total_consultations_left"] \
-            if result["total_consultations_left"] is None or result["total_consultations_left"] >= 0 else 0
-        total_surgeries_left = result["total_surgeries_left"] \
-            if result["total_surgeries_left"] is None or result["total_surgeries_left"] >= 0 else 0
-        total_deliveries_left = result["total_deliveries_left"] \
-            if result["total_deliveries_left"] is None or result["total_deliveries_left"] >= 0 else 0
-        total_antenatal_left = result["total_antenatal_left"] \
-            if result["total_antenatal_left"] is None or result["total_antenatal_left"] >= 0 else 0
-        total_visits_left = result["total_visits_left"] \
-            if result["total_visits_left"] is None or result["total_visits_left"] >= 0 else 0
+        total_admissions_left = (
+            result["total_admissions_left"]
+            if result["total_admissions_left"] is None
+            or result["total_admissions_left"] >= 0
+            else 0
+        )
+        total_consultations_left = (
+            result["total_consultations_left"]
+            if result["total_consultations_left"] is None
+            or result["total_consultations_left"] >= 0
+            else 0
+        )
+        total_surgeries_left = (
+            result["total_surgeries_left"]
+            if result["total_surgeries_left"] is None
+            or result["total_surgeries_left"] >= 0
+            else 0
+        )
+        total_deliveries_left = (
+            result["total_deliveries_left"]
+            if result["total_deliveries_left"] is None
+            or result["total_deliveries_left"] >= 0
+            else 0
+        )
+        total_antenatal_left = (
+            result["total_antenatal_left"]
+            if result["total_antenatal_left"] is None
+            or result["total_antenatal_left"] >= 0
+            else 0
+        )
+        total_visits_left = (
+            result["total_visits_left"]
+            if result["total_visits_left"] is None or result["total_visits_left"] >= 0
+            else 0
+        )
 
         eligibility.surgery_amount_left = result["policy__product__max_amount_surgery"]
-        eligibility.consultation_amount_left = result["policy__product__max_amount_consultation"]
-        eligibility.delivery_amount_left = result["policy__product__max_amount_delivery"]
-        eligibility.antenatal_amount_left = result["policy__product__max_amount_antenatal"]
-        eligibility.hospitalization_amount_left = result["policy__product__max_amount_hospitalization"]
+        eligibility.consultation_amount_left = result[
+            "policy__product__max_amount_consultation"
+        ]
+        eligibility.delivery_amount_left = result[
+            "policy__product__max_amount_delivery"
+        ]
+        eligibility.antenatal_amount_left = result[
+            "policy__product__max_amount_antenatal"
+        ]
+        eligibility.hospitalization_amount_left = result[
+            "policy__product__max_amount_hospitalization"
+        ]
 
         if service:
             if service.category == Service.CATEGORY_SURGERY:
-                if total_surgeries_left == 0 \
-                        or services_left == 0 \
-                        or (min_date_service and min_date_service > now) \
-                        or (result["policy__product__max_amount_surgery"] is not None
-                            and result["policy__product__max_amount_surgery"] <= 0):
+                if (
+                    total_surgeries_left == 0
+                    or services_left == 0
+                    or (min_date_service and min_date_service > now)
+                    or (
+                        result["policy__product__max_amount_surgery"] is not None
+                        and result["policy__product__max_amount_surgery"] <= 0
+                    )
+                ):
                     eligibility.is_service_ok = False
                 else:
                     eligibility.is_service_ok = True
             elif service.category == Service.CATEGORY_CONSULTATION:
-                if total_consultations_left == 0 \
-                        or services_left == 0 \
-                        or (min_date_service and min_date_service > now) \
-                        or (result["policy__product__max_amount_consultation"] is not None
-                            and result["policy__product__max_amount_consultation"] <= 0):
+                if (
+                    total_consultations_left == 0
+                    or services_left == 0
+                    or (min_date_service and min_date_service > now)
+                    or (
+                        result["policy__product__max_amount_consultation"] is not None
+                        and result["policy__product__max_amount_consultation"] <= 0
+                    )
+                ):
                     eligibility.is_service_ok = False
                 else:
                     eligibility.is_service_ok = True
             elif service.category == Service.CATEGORY_DELIVERY:
-                if total_deliveries_left == 0 \
-                        or services_left == 0 \
-                        or (min_date_service and min_date_service > now) \
-                        or (result["policy__product__max_amount_delivery"] is not None
-                            and result["policy__product__max_amount_delivery"] <= 0):
+                if (
+                    total_deliveries_left == 0
+                    or services_left == 0
+                    or (min_date_service and min_date_service > now)
+                    or (
+                        result["policy__product__max_amount_delivery"] is not None
+                        and result["policy__product__max_amount_delivery"] <= 0
+                    )
+                ):
                     eligibility.is_service_ok = False
                 else:
                     eligibility.is_service_ok = True
@@ -1004,8 +1154,14 @@ def insert_renewals(date_from=None, date_to=None, officer_id=None, reminding_int
 def update_renewals():
     from core import datetime
     now = datetime.datetime.now()
-    updated_policies = Policy.objects.filter(validity_to__isnull=True, expiry_date__lt=now) \
-        .update(status=Policy.STATUS_EXPIRED)
+    updated_policies = Policy.objects.filter(
+        validity_to__isnull=True,
+        expiry_date__lt=now,
+    ).exclude(
+        status=Policy.STATUS_EXPIRED
+    ).update(
+        status=Policy.STATUS_EXPIRED
+    )
     logger.debug("update_renewals set %s policies to expired status", updated_policies)
     return updated_policies
 
@@ -1126,6 +1282,15 @@ def update_insuree_policies(policy, audit_user_id):
 
 def policy_status_premium_paid(policy, effective_date):
     if PolicyConfig.activation_option == PolicyConfig.ACTIVATION_OPTION_CONTRIBUTION:
+        # Exception for activating multiple policies  
+        program = policy.product.program
+        if program:
+            for police in Policy.objects.filter(family=policy.family).filter(validity_to__isnull=True):
+                if police.status == Policy.STATUS_ACTIVE:
+                    prod = Product.objects.get(id=police.product.id)
+                    if prod:
+                        if program.idProgram == prod.program.idProgram:
+                            raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme pour un même assuré")                      
         policy.effective_date = effective_date
         policy.status = Policy.STATUS_ACTIVE
     else:
@@ -1144,7 +1309,7 @@ def validate_policy_number(policy_number, is_new_policy=False):
         cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number)
         print("cheque ", cheques)
         if cheques:
-            if cheques[0].chequeImportLineStatus=="used":
+            if cheques[0].chequeImportLineStatus=="Used":
                 return [{"message": "Chèque %s déjà utilisé" % policy_number}]
 
     if ChequeImportLine.objects.filter(chequeImportLineCode=policy_number).exists()==False:

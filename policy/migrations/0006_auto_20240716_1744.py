@@ -13,8 +13,8 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name='policy',
-            name='creation_date',
-            field=models.DateField(blank=True, default=django.utils.timezone.now, db_column='creationDate', null=True),
+             model_name='policy',
+             name='creation_date',
+             field=models.DateField(blank=True, default=django.utils.timezone.now, db_column='creationDate', null=True),
         ),
     ]

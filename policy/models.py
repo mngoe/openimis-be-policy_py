@@ -1,16 +1,22 @@
 import uuid
-
+import sys
 from core import fields
 from core import models as core_models
 from core.utils import filter_validity
 from core.models import Officer
+from django.core.cache import caches
+cache = caches['coverage']
+from django_redis.cache import RedisCache
 
 from django.conf import settings
 from django.db import models
+from django.apps import apps
 from graphql import ResolveInfo
 from insuree.models import Family
 from product.models import Product
 from django.utils import timezone as django_tz 
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
 
 
 class Policy(core_models.VersionedModel):
@@ -36,6 +42,7 @@ class Policy(core_models.VersionedModel):
     # row_id = models.BinaryField(db_column='RowID', blank=True, null=True)
     policy_number = models.CharField(db_column='policyNumber', max_length=50, blank=True, null=True)
     creation_date = models.DateField(db_column='creationDate', default=django_tz.now, blank=True, null=True)
+    pregnancy_age = models.PositiveSmallIntegerField(db_column='PregnancyAge', blank=True, null=True)
 
     @staticmethod
     def get_query_sum_premium(photo=False):
@@ -69,6 +76,7 @@ class Policy(core_models.VersionedModel):
 
     STAGE_NEW = 'N'
     STAGE_RENEWED = 'R'
+    STAGE_EXPIRATION_FORCED = 'F'
 
     @classmethod
     def get_queryset(cls, queryset, user):
@@ -113,6 +121,13 @@ class PolicyRenewal(core_models.VersionedModel):
     audit_user_id = models.IntegerField(db_column='AuditCreateUser', null=True, blank=True)
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['policy', 'validity_to'],
+                name='unique_policy_validity_to_null',
+                condition=models.Q(validity_to__isnull=True)
+            )
+        ]
         managed = True
         db_table = 'tblPolicyRenewals'
 
@@ -126,3 +141,43 @@ class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
     class Meta:
         managed = True
         db_table = "policy_PolicyMutation"
+
+class PolicyRenewalMutation(core_models.UUIDModel, core_models.ObjectMutation):
+    policy_renewal = models.ForeignKey(PolicyRenewal, models.DO_NOTHING,
+                                 related_name='mutations')
+    mutation = models.ForeignKey(
+        core_models.MutationLog, models.DO_NOTHING, related_name='policy_renewals')
+
+    class Meta:
+        managed = True
+        db_table = "policy_renewal_PolicyMutation"
+
+if "claim" in sys.modules:
+    from claim.models import Claim
+
+    @receiver(post_save, sender=Claim)
+    @receiver(post_delete, sender=Claim)
+    def clean_enquire_cache_claim(sender, instance, *args, **kwagrs):
+        cache.delete(
+            f"eligibility_{instance.insuree.family_id or instance.insuree.id}"
+        )
+
+@receiver(post_save, sender=Product)
+@receiver(post_delete, sender=Product)
+def clean_all_enquire_cache_product(sender, instance, *args, **kwagrs):
+    if isinstance(cache, RedisCache):
+        cache.delete("eligibility_*")
+    else:
+        cache.clear()
+
+
+@receiver(post_save, sender=Policy)
+@receiver(post_delete, sender=Policy)
+def clean_all_enquire_cache_policy(sender, instance, *args, **kwagrs):
+    cache.delete(f"eligibility_{instance.family_id}")
+
+
+@receiver(post_save, sender=Family)
+@receiver(post_delete, sender=Family)
+def clean_all_enquire_cache_family(sender, instance, *args, **kwagrs):
+    cache.delete(f"eligibility_{instance.id}")

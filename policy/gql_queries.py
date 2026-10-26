@@ -40,6 +40,7 @@ class PolicyGQLType(DjangoObjectType):
             "status":  ["exact", "lt", "lte", "gt", "gte"],
             "value": ["exact", "lt", "lte", "gt", "gte"],
             "policy_number": ["exact", "icontains"],
+            "pregnancy_age": ["exact", "lt", "lte", "gt", "gte"],
             **prefix_filterset("product__", ProductGQLType._meta.filter_fields),
             **prefix_filterset("officer__", OfficerGQLType._meta.filter_fields),
         }
