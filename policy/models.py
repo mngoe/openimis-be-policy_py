@@ -22,6 +22,10 @@ from location.models import LocationManager
 
 
 class Policy(core_models.VersionedModel):
+    # A policy is as visible as the family it covers (which carries the ENROLMENT
+    # / district rule in Family.get_queryset).
+    row_scope = core_models.ParentScope("family")
+
     id = models.AutoField(db_column='PolicyID', primary_key=True)
     uuid = models.CharField(db_column='PolicyUUID', max_length=36, default=uuid.uuid4, unique=True)
 
@@ -80,26 +84,32 @@ class Policy(core_models.VersionedModel):
     STAGE_RENEWED = 'R'
 
     @classmethod
-    def get_queryset(cls, queryset, user):
-        queryset = Policy.filter_queryset(queryset)
-        # GraphQL calls with an info object while Rest calls with the user itself
-        if isinstance(user, ResolveInfo):
-            user = user.context.user
-        if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        if settings.ROW_SECURITY:
-            # The "how do we reach the location of a policy ?" the TODO above asked about:
-            # through the family it covers, whose own location is a village. That is also
-            # the path the ENROLMENT narrowing takes, `build_user_location_filter_query`
-            # walking it down to the village the credential is held on.
-            queryset = LocationManager().build_user_location_filter_query(
-                user._u, prefix='family__location__parent__parent',
-                queryset=queryset, loc_types=['D'],
-                link_types=ENROLMENT_UBA_LINK_TYPE)
-        return queryset
+    def get_queryset(cls, queryset, user=None, *, validity=None, audits=None):
+        """Current policies the user may see (OP-2029 validity / audits on request)."""
+        queryset = cls.apply_row_filters(queryset, validity, audits, default=cls.filter_queryset)
+        return cls.get_scoped_queryset(queryset, user)
+
+    @classmethod
+    def get_scoped_queryset(cls, queryset, user):
+        """Row security only, superseded versions included.
+
+        A superseded policy keeps its family, so the same rule applies to it; this
+        is the entry point for queries that show history. The family carries the
+        district + ENROLMENT (UBA) rule; anonymous users get no rows.
+        """
+        user = cls.scoping_user(user)
+        if queryset is None:
+            queryset = cls.objects.all()
+        if settings.ROW_SECURITY and (user is None or user.is_anonymous):
+            return cls.no_rows(queryset)
+        if not settings.ROW_SECURITY:
+            return queryset
+        return super().get_queryset(queryset, user)
 
 
 class PolicyRenewal(core_models.VersionedModel):
+    row_scope = core_models.ParentScope("policy")
+
     id = models.AutoField(db_column='RenewalID', primary_key=True)
     uuid = models.CharField(db_column='RenewalUUID', max_length=36, default=uuid.uuid4, unique=True)
 
@@ -135,6 +145,7 @@ class PolicyRenewal(core_models.VersionedModel):
 
 
 class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
+    row_scope = core_models.ParentScope("policy")
     policy = models.ForeignKey(Policy, models.DO_NOTHING,
                                  related_name='mutations')
     mutation = models.ForeignKey(
@@ -145,6 +156,7 @@ class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
         db_table = "policy_PolicyMutation"
 
 class PolicyRenewalMutation(core_models.UUIDModel, core_models.ObjectMutation):
+    row_scope = core_models.ParentScope("policy_renewal")
     policy_renewal = models.ForeignKey(PolicyRenewal, models.DO_NOTHING,
                                  related_name='mutations')
     mutation = models.ForeignKey(

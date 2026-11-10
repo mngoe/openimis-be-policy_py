@@ -1,3 +1,4 @@
+from core.gql import ScopedQuerysetMixin
 import graphene
 from graphene_django import DjangoObjectType
 from django.utils.translation import gettext as _
@@ -10,7 +11,7 @@ from django.core.exceptions import PermissionDenied
 from insuree.uba import can_query
 
 
-class PolicyGQLType(DjangoObjectType):
+class PolicyGQLType(ScopedQuerysetMixin, DjangoObjectType):
     sum_premiums = graphene.Float(source="sum_premiums")
     
     def resolve_family(self, info):
@@ -49,9 +50,15 @@ class PolicyGQLType(DjangoObjectType):
 
     @classmethod
     def get_queryset(cls, queryset, info):
-        # the row security lives on the model so that GraphQL and the REST/FHIR API
-        # share it; without this the model rule was simply never reached from GraphQL
-        return Policy.get_queryset(queryset, info)
+        # Callers outside graphene (tests, services) pass the user itself.
+        if not hasattr(info, "context"):
+            from types import SimpleNamespace
+            info = SimpleNamespace(context=SimpleNamespace(user=info))
+        return super().get_queryset(queryset, info)
+
+    # Row security lives on the model (Policy.get_queryset, shared with REST/FHIR);
+    # ScopedQuerysetMixin hands it the user and the OP-2029 validity / audits that
+    # showHistory / isDeleted map to (OP-3317 phase 2).
 
 
 class PolicyAndWarningsGQLType(graphene.ObjectType):

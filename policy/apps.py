@@ -5,7 +5,6 @@ MODULE_NAME = "policy"
 
 DEFAULT_CFG = {
     "gql_query_policies_perms": ['101201'],
-    "gql_query_policy_officers_perms": [],
     "gql_query_policies_by_insuree_perms": ['101201'],
     "gql_query_policies_by_family_perms": ['101201'],
     "gql_query_eligibilities_perms": ['101201'],
@@ -30,7 +29,6 @@ class PolicyConfig(AppConfig):
     name = MODULE_NAME
 
     gql_query_policies_perms = []
-    gql_query_policy_officers_perms = []
     gql_query_policies_by_insuree_perms = []
     gql_query_policies_by_family_perms = []
     gql_query_eligibilities_perms = []

@@ -150,6 +150,8 @@ class SuspendPoliciesMutation(OpenIMISMutation):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
+                    # existence only: the scope is checked below by has_enrolment_perms
+                    # (district + ENROLMENT link), which answers "unauthorized"
                     policy = Policy.objects.filter(uuid=policy_uuid).first()
                     if policy is None:
                         errors += {
@@ -188,6 +190,8 @@ class DeletePoliciesMutation(OpenIMISMutation):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
+                    # existence only: the scope is checked below by has_enrolment_perms
+                    # (district + ENROLMENT link), which answers "unauthorized"
                     policy = Policy.objects \
                         .filter(uuid=policy_uuid) \
                         .first()

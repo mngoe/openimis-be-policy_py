@@ -23,6 +23,7 @@ from insuree.models import Family, Insuree, InsureePolicy
 from django.db.models import OuterRef, Subquery, F, Count
 from location.apps import LocationConfig
 from insuree.uba import can_query
+from insuree.apps import InsureeConfig
 
 # We do need all queries and mutations in the namespace here.
 from .gql_queries import (
@@ -45,12 +46,11 @@ from .values import policy_values
 
 def _check_in_scope(user, perms, model, **lookup):
     """
-    The by family / by insuree listings read the policies without any row filter. A user
-    holding the rights globally keeps that; one reaching them through the UBA bag must
-    have the family / insuree in their scope (the linked villages).
+    The by family / by insuree listings read the policies without any row filter, so the
+    family / insuree asked for must be in the user's scope: their districts, narrowed to
+    the linked villages for a user holding the rights through the UBA bag. Holding the
+    rights globally no longer skips the check (row security, whatever the bag).
     """
-    if user.has_perms(perms):
-        return
     if not model.get_queryset(model.objects.filter(*filter_validity(), **lookup), user).exists():
         raise PermissionDenied(_("unauthorized"))
 
@@ -236,13 +236,11 @@ class Query(graphene.ObjectType):
         )
 
     def resolve_policies_by_insuree(self, info, **kwargs):
+        # Business decision (2026-11-10): the lookup by CHF ID is open, unscoped,
+        # to every holder of the normal insuree read right (counter / eligibility).
         if not can_query(info.context.user, PolicyConfig.gql_query_policies_by_insuree_perms) \
-                and not info.context.user.has_perms(ClaimConfig.gql_query_claims_perms):
+                and not can_query(info.context.user, InsureeConfig.gql_query_insurees_perms):
             raise PermissionDenied(_("unauthorized"))
-        if not info.context.user.has_perms(ClaimConfig.gql_query_claims_perms):
-            _check_in_scope(
-                info.context.user, PolicyConfig.gql_query_policies_by_insuree_perms,
-                Insuree, chf_id=kwargs.get('chf_id'))
         req = ByInsureeRequest(
             chf_id=kwargs.get('chf_id'),
             active_or_last_expired_only=kwargs.get(
@@ -338,11 +336,15 @@ class Query(graphene.ObjectType):
             region=None,
             **kwargs
     ):
-        if not info.context.user.has_perms(
-            PolicyConfig.gql_query_policy_officers_perms
-        ):
+        # no dedicated right: the officers listed are narrowed by the location / UBA scope
+        if info.context.user.is_anonymous:
             raise PermissionDenied(_("unauthorized"))
-        queryset = Officer.objects
+        queryset = Officer.get_queryset(None, info.context.user).filter(
+            *Officer.filter_location(
+                info.context.user,
+                paths=("officer_villages__location__parent__parent",),
+                loc_types=['D'])
+        ).distinct()
         location_id = district if district else region
 
         if location_id is not None:
@@ -368,6 +370,8 @@ class Query(graphene.ObjectType):
         return queryset
 
     def resolve_policy_number_validity(self, info, **kwargs):
+        if info.context.user.is_anonymous:
+            raise PermissionDenied(_("unauthorized"))
         errors = validate_policy_number(kwargs['policyNumber'], kwargs.get('newPolicy', False))
         print("Errors: ", errors)
         if errors:
