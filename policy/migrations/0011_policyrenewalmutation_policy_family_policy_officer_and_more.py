@@ -12,11 +12,6 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("product", "0008_auto_20230510_1347"),
-        ("insuree", "0030_family_confirmation_type_family_family_type_and_more"),
-        (
-            "core",
-            "0032_rename_core_userbu_user_id_c9ca53_idx_core_userbu_user_id_57d1ee_idx_and_more",
-        ),
         ("policy", "0010_add_field_pregnancy_age"),
     ]
 
@@ -138,13 +133,19 @@ class Migration(migrations.Migration):
                 db_column="ValidityFrom", default=datetime.datetime.now
             ),
         ),
-        migrations.AddConstraint(
-            model_name="policyrenewal",
-            constraint=models.UniqueConstraint(
-                condition=models.Q(("validity_to__isnull", True)),
-                fields=("policy", "validity_to"),
-                name="unique_policy_validity_to_null",
-            ),
+        # the index itself is created in SQL by 0009_add_constraint_policyrenewal:
+        # only record the constraint in the migration state, creating it again fails
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.AddConstraint(
+                    model_name="policyrenewal",
+                    constraint=models.UniqueConstraint(
+                        condition=models.Q(("validity_to__isnull", True)),
+                        fields=("policy", "validity_to"),
+                        name="unique_policy_validity_to_null",
+                    ),
+                ),
+            ],
         ),
         migrations.AddField(
             model_name="policyrenewalmutation",
