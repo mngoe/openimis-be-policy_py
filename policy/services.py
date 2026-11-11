@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime as py_datetime, date as py_date
 from django.core.cache import caches
 import core
+from dateutil.relativedelta import relativedelta
 from claim.models import Claim, ClaimItem
 from django import dispatch
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -13,10 +14,14 @@ from django.template import Template, Context
 from django.utils.translation import gettext as _
 from graphene.utils.str_converters import to_snake_case
 from core.signals import register_service_signal
-from insuree.models import Insuree, InsureePolicy
+from insuree.models import Family, Insuree, InsureePolicy
 from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
+from policy.member_ages import (
+    _date as _as_date, has_age_limits, members_coverage, covered_members, member_coverage, insuree_policy_expiry,
+    apply_member_expiry,
+)
 from policy.utils import MonthsAdd
 from product.models import Product
 from .models import Policy, PolicyRenewal, eligibility_cache_key
@@ -37,6 +42,19 @@ def reset_policy_before_update(policy):
 cache = caches['coverage']
 
 
+def not_covered_message(product, coverage, start_date):
+    """The refusal of one member, in the wording the users (and the frontend alert) know."""
+    member = coverage.member
+    if coverage.reason == "no_dob":
+        return f"L'assuré(e) {member.chf_id} n'a pas de date de naissance: les limites d'âge du produit ne peuvent être vérifiées"
+    age = relativedelta(_as_date(start_date), _as_date(member.dob)).years
+    if coverage.reason == "below_min":
+        return (f"L'assuré(e) {member.chf_id} avec l'âge {age} n'a pas encore l'âge minimal requis "
+                f"renseigné sur le produit qui est de {product.age_minimal}")
+    return (f"L'assuré(e) {member.chf_id} avec l'âge {age} a dépassé(e) l'âge maximal "
+            f"renseigné sur le produit qui est de {product.age_maximal}")
+
+
 class PolicyService:
     def __init__(self, user):
         self.user = user
@@ -46,48 +64,17 @@ class PolicyService:
         logger.debug("Data is %s", data)
         policy_uuid = data.get('uuid', None)
         familyid = data.get('family_id', None)
-        insurees = Insuree.objects.filter(family=familyid)
         product_id = data.get('product_id', None)
-        # expiry_date = data.get('expiry_date', None)
-        product = Product.objects.get(id=product_id) if insurees and product_id else None
-        if product is not None and (product.age_minimal or product.age_maximal):
-            member = insurees[0]
-            logger.debug("Dob %s", member.dob)
-            if not member.dob:
-                # the age limits of the product cannot be checked without it
-                raise ValidationError(_("policy.validation.member_without_dob") % {
-                    'chf_id': member.chf_id})
-            date_format = "%Y-%m-%d"
-            today = py_datetime.strptime(str(py_datetime.now().date()), date_format)
-            insuree_dob = py_datetime.strptime(str(member.dob), date_format)
-            delta = today - insuree_dob
-            age_patient = int(round(delta.days / 365.0))
-            logger.debug("age_patient %s", age_patient)
-            logger.debug("Age Max sur le produit %s", product.age_maximal)
-            logger.debug("Age Min sur le produit %s", product.age_minimal)
-            # the_date = py_datetime.strptime(
-            #     str(expiry_date), "%Y-%m-%d").date()
-            if product.age_minimal:
-                if(age_patient < product.age_minimal):
-                    # The insuree's age is lower than the min age
-                    raise Exception(
-                        f"L'assuré(e) avec l'âge {age_patient} n'a pas encore l'âge minimal requis "
-                        f"renseigné sur le produit qui est de {product.age_minimal}"
-                    )
-            if product.age_maximal:
-                diff = product.age_maximal - age_patient
-                logger.debug("diff %s", diff)
-                if(diff < 0):
-                    # The insuree's age is greater than the max age
-                    raise Exception(
-                        f"L'assuré(e) avec l'âge {age_patient} a dépassé(e) l'âge maximal "
-                        f"renseigné sur le produit qui est de {product.age_maximal}"
-                    )
-                # from dateutil.relativedelta import relativedelta
-                # exp_date = the_date + relativedelta(years=+diff)
-                # logger.debug("exp_date %s", exp_date)
-                # data["expiry_date"] = exp_date
-                logger.debug("expiry_date %s", data.get("expiry_date"))
+        family = Family.objects.filter(id=familyid).first() if familyid else None
+        product = Product.objects.filter(id=product_id).first() if product_id else None
+        if family is not None and product is not None and has_age_limits(product):
+            # every current member is checked; a policy covering no one is refused
+            start_date = data.get('start_date') or data.get('enroll_date')
+            coverages = members_coverage(product, family, start_date)
+            logger.debug("Members covered %s", [(c.member.chf_id, c.covered, c.reason) for c in coverages])
+            if not covered_members(coverages):
+                raise ValidationError(" ; ".join(
+                    not_covered_message(product, coverage, start_date) for coverage in coverages))
         if isinstance(data['enroll_date'], str):
             data['enroll_date'] = py_datetime.strptime(data['enroll_date'], "%Y-%m-%d").date()
         if 'enroll_date' in data and data['enroll_date'] > py_date.today():
@@ -186,6 +173,8 @@ class PolicyService:
             if payer_uuid is not None:
                 premium_data["payer_uuid"] = payer_uuid
             premium_action(premium_data, user)
+            # the payment resets every member to the policy expiry date
+            apply_member_expiry(policy)
         return policy
 
     def generate_contribution_receipt(self, product, enroll_date):
@@ -1258,9 +1247,21 @@ HOF{% endif %}
 
 
 def update_insuree_policies(policy, audit_user_id):
+    """
+    One InsureePolicy per covered member (policy.member_ages): a member outside the
+    product's age limits is not covered (their current row is closed), one ageing out
+    before the policy expiry is covered until that day.
+    """
     logger.debug("Member Update Insuree policies")
+    product = policy.product
     for member in policy.family.members.filter(validity_to__isnull=True):
         existing_ip = InsureePolicy.objects.filter(validity_to__isnull=True, insuree=member, policy=policy).first()
+        coverage = member_coverage(product, member, policy.start_date, policy.expiry_date)
+        if not coverage.covered:
+            if existing_ip:
+                existing_ip.delete_history()
+            logger.debug("Not covered (%s): %s - %s", coverage.reason, member.chf_id, policy.uuid)
+            continue
         if existing_ip:
             existing_ip.save_history()
         ip, ip_created = InsureePolicy.objects.filter(validity_to__isnull=True).update_or_create(
@@ -1269,7 +1270,7 @@ def update_insuree_policies(policy, audit_user_id):
                 enrollment_date=policy.enroll_date,
                 start_date=policy.start_date,
                 effective_date=policy.effective_date,
-                expiry_date=policy.expiry_date,
+                expiry_date=insuree_policy_expiry(product, member, policy),
                 offline=policy.offline,
                 audit_user_id=audit_user_id
             )

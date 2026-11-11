@@ -1,5 +1,6 @@
 import logging
 from django.utils.translation import gettext as _
+from .member_ages import members_coverage, covered_members, policy_expiry_date
 from django.db.models import Q,Count
 import datetime as py_datetime
 from decimal import *
@@ -58,18 +59,14 @@ def set_start_date(policy):
     ))
 
 
-def set_expiry_date(policy, family, enroll_date):
+def set_expiry_date(policy, family, enroll_date, members=None):
+    """
+    The policy period, cut only when every covered member ages out before its end (then
+    it ends with the last of them). A member ageing out earlier keeps their own expiry
+    date on their InsureePolicy (see policy.member_ages). Returns the warnings.
+    """
     logger.debug("enroll_date %s", enroll_date)
-    member = family.members.filter(validity_to__isnull=True).first()
-    # plain dates on both sides: the expiry date ends up in a DateField
-    insuree_dob = py_datetime.datetime.strptime(str(member.dob), "%Y-%m-%d").date() \
-        if member is not None and member.dob else None
-    logger.debug("Member dob %s", insuree_dob)
-    if insuree_dob:
-        logger.debug("age_patient %s", int(round((py_datetime.date.today() - insuree_dob).days / 365.0)))
     product = policy.product
-    logger.debug("Age Max sur le produit %s", product.age_maximal)
-    logger.debug("Age Min sur le produit %s", product.age_minimal)
     from core import datetime, datetimedelta
 
     insurance_period = datetimedelta(
@@ -80,22 +77,28 @@ def set_expiry_date(policy, family, enroll_date):
             insurance_period -
             datetimedelta(days=1)
     ).to_ad_date()
-    if product.age_maximal and insuree_dob:
-        age_at_expiry = relativedelta(expiry_date, insuree_dob)
-        if age_at_expiry.years > product.age_maximal or \
-            (age_at_expiry.years == product.age_maximal and age_at_expiry.months > 0):
-            expiry_date = insuree_dob + relativedelta(years=product.age_maximal)
-
-    elif not product.age_maximal:
-        logger.debug("The product does not have the max age")
-    policy.expiry_date = expiry_date
-    if product.age_maximal and not insuree_dob:
-        # the service refuses to save it; the values preview warns instead of failing
-        return [_("policy.validation.max_age_not_applied_without_dob")]
-    return []
+    coverages = members_coverage(product, family, policy.start_date, expiry_date, members=members)
+    policy.expiry_date = policy_expiry_date(coverages, expiry_date)
+    return coverage_warnings(coverages)
 
 
-def family_counts(product, family):
+def coverage_warnings(coverages):
+    warnings = []
+    for coverage in coverages:
+        chf_id = getattr(coverage.member, "chf_id", None)
+        if not coverage.covered:
+            warnings.append(_("policy.validation.member_not_covered_%s" % coverage.reason)
+                            % {'chf_id': chf_id})
+        elif coverage.ends_on:
+            warnings.append(_("policy.validation.member_coverage_ends")
+                            % {'chf_id': chf_id, 'date': coverage.ends_on})
+    if coverages and not any(coverage.covered for coverage in coverages):
+        warnings.append(_("policy.validation.no_member_covered"))
+    return warnings
+
+
+def family_counts(product, family, members=None):
+    """`members`: count these insurees only (the covered ones) instead of all current members."""
     adults = 0
     other_adults = 0
     extra_adults = 0
@@ -104,9 +107,10 @@ def family_counts(product, family):
     extra_children = 0
     total = 0
     date_threshold = py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority)
-    counts= family.members.filter(
-        Q(validity_to__isnull=True),
-    ).aggregate(
+    counted = family.members.filter(Q(validity_to__isnull=True))
+    if members is not None:
+        counted = counted.filter(id__in=[member.id for member in members])
+    counts = counted.aggregate(
         adults=Count('id',filter=Q(Q(dob__lt=date_threshold) & ~Q(relationship_id=7))),
         children=Count('id', filter=Q(Q(dob__gte=date_threshold) & ~Q(relationship_id=7))),
         other_children=Count('id', filter=Q(relationship_id=7, dob__gte=date_threshold)),
@@ -214,9 +218,9 @@ def discount(policy, prev_policy):
         discount_renew(policy, prev_policy)
 
 
-def set_value(policy, family, prev_policy):
+def set_value(policy, family, prev_policy, members=None):
     product = policy.product
-    f_counts = family_counts(policy.product, family)
+    f_counts = family_counts(policy.product, family, members)
     contributions = sum_contributions(product, f_counts)
     general_assembly = sum_general_assemblies(product, f_counts)
     registration = sum_registrations(policy, product, f_counts)
@@ -225,17 +229,18 @@ def set_value(policy, family, prev_policy):
 
 
 def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
-    """`members`: the insurees to count instead of the active members of `family`."""
-    if members:
-        member_count = len(members)
-    else:
-        member_count = family.members.filter(validity_to__isnull=True).count()
+    """`members`: the insurees to count instead of the active members of `family`;
+    only those the product's age limits cover are counted (policy.member_ages)."""
+    set_start_date(policy)
+    coverages = members_coverage(policy.product, family, policy.start_date,
+                                 members=members or None)
+    covered = covered_members(coverages)
+    member_count = len(covered)
     max_members = policy.product.max_members
     above_max = max(0, member_count - max_members)
     warnings = []
     if above_max:
         warnings.append(_("policy.validation.members_count_above_max") % {'max': max_members, 'count': member_count})
-    set_start_date(policy)
-    warnings += set_expiry_date(policy, family, enroll_date)
-    set_value(policy, family, prev_policy)
+    warnings += set_expiry_date(policy, family, enroll_date, members=members or None)
+    set_value(policy, family, prev_policy, covered)
     return policy, warnings

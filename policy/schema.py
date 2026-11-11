@@ -2,11 +2,13 @@ from claim.apps import ClaimConfig
 from core.schema import (
     OrderedDjangoFilterConnectionField,
     signal_mutation_module_validate,
+    signal_mutation_module_after_mutating,
 )
 from core.gql import legacy_row_filters, row_filter_arguments
 from core.models import Audits, Validity
 from core.utils import filter_validity
 import graphene
+import logging
 from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch
 from django.db.models import Q
@@ -46,6 +48,8 @@ from .gql_mutations import (
     ForcePoliciesExpirationMutation
 )
 from .values import policy_values
+
+logger = logging.getLogger(__name__)
 
 
 def _check_in_scope(user, perms, model, **lookup):
@@ -422,5 +426,30 @@ def on_policy_mutation(sender, **kwargs):
     return []
 
 
+def on_contribution_after_mutation(sender, **kwargs):
+    """
+    A premium mutation resets the expiry date of every member of the policy to the
+    policy one (contribution.services._update_policy_insurees): the members ageing out
+    before it get their own date back (policy.member_ages).
+    """
+    from policy.member_ages import apply_member_expiry
+    data = kwargs.get('data') or {}
+    policy_uuids = [data['policy_uuid']] if data.get('policy_uuid') else []
+    if not policy_uuids and data.get('uuid'):
+        from contribution.models import Premium
+        policy_uuids = list(Premium.objects.filter(uuid=data['uuid']).values_list('policy__uuid', flat=True))
+    for policy in Policy.objects.filter(uuid__in=policy_uuids, validity_to__isnull=True):
+        try:
+            apply_member_expiry(policy)
+        except Exception:
+            logger.exception("Failed to restore the member expiry dates of policy %s", policy.uuid)
+    return []
+
+
 def bind_signals():
     signal_mutation_module_validate["policy"].connect(on_policy_mutation)
+    contribution_signal = signal_mutation_module_after_mutating.get("contribution")
+    if contribution_signal is not None:
+        contribution_signal.connect(on_contribution_after_mutation)
+    else:
+        logger.warning("contribution module not loaded: member expiry dates not restored after payments")
