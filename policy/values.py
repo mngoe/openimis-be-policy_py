@@ -5,6 +5,7 @@ from django.db.models import Q,Count
 import datetime as py_datetime
 from decimal import *
 from .models import Policy
+from .apps import PolicyConfig
 
 from core.apps import CoreConfig
 from dateutil.relativedelta import relativedelta
@@ -247,10 +248,12 @@ def pro_rata_contributions(product, family, coverages):
 
 def set_value(policy, family, prev_policy, members=None, coverages=None):
     """`coverages`: the member coverages (policy.member_ages) to pro-rate the
-    contributions on; general assembly and registration count the covered members."""
+    contributions on, when the module configuration `age_limit_pro_rata` asks so (by
+    default a covered member pays in full, however short their coverage); general
+    assembly and registration count the covered members."""
     product = policy.product
     f_counts = family_counts(policy.product, family, members)
-    if coverages is not None:
+    if coverages is not None and PolicyConfig.age_limit_pro_rata:
         contributions = pro_rata_contributions(product, family, coverages)
     else:
         contributions = sum_contributions(product, f_counts)
@@ -262,8 +265,8 @@ def set_value(policy, family, prev_policy, members=None, coverages=None):
 
 def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
     """`members`: the insurees to count instead of the active members of `family`;
-    only those the product's age limits cover are counted, pro-rata of their covered
-    share of the period (policy.member_ages)."""
+    only those the product's age limits cover are counted (policy.member_ages), pro-rata
+    of their covered share of the period with `age_limit_pro_rata`."""
     set_start_date(policy)
     coverages = members_coverage(policy.product, family, policy.start_date,
                                  period_expiry_date(policy), members=members or None)

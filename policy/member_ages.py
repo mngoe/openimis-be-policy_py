@@ -12,7 +12,8 @@ range (`age_minimal` / `age_maximal`). Each member is checked over the policy pe
   expiry date, is not covered; nor is a member without date of birth.
 
 Each covered member gets their own dates on their InsureePolicy (claims check those), and
-pays the share of the period they are covered (pro-rata, see policy.values). The policy
+pays in full - or the share of the period they are covered with the module configuration
+`age_limit_pro_rata` (see policy.values). The policy
 keeps its period unless every member ages out before it ends; a policy covering no member
 is refused. Without age limits every current member is covered the whole period, and the
 member dates are left as they are (`member_dates` gives nothing to apply).

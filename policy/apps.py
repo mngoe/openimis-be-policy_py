@@ -23,6 +23,9 @@ DEFAULT_CFG = {
     "ACTIVATION_OPTION_READY": 3,
     "contribution_receipt_length": 5,
     "gql_mutation_force_expiration_perms": ['101208'],
+    # a member covered for part of the period (product age limits, policy.member_ages)
+    # pays that share of their contribution; False: the full amount however short
+    "age_limit_pro_rata": False,
 }
 
 
@@ -48,6 +51,7 @@ class PolicyConfig(AppConfig):
     ACTIVATION_OPTION_READY = None
     activation_option = None
     contribution_receipt_length = None
+    age_limit_pro_rata = False
 
     def __load_config(self, cfg):
         for field in cfg:

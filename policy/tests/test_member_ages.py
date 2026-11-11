@@ -104,6 +104,12 @@ class MemberAgesTest(TestCase):
                              (coverage.covered, coverage.starts_on, coverage.ends_on, coverage.share))
 
     # --- the values preview
+    def test_values_full_amount_by_default(self):
+        """[age_limit_pro_rata False] a covered member pays in full however short"""
+        policy, _ = policy_values(self._policy(), self.family, None, self.user, START)
+        self.assertEqual(Decimal(300), policy.value, "head, spouse and teen at 100")
+
+    @mock.patch("policy.values.PolicyConfig.age_limit_pro_rata", True)
     def test_values_pro_rata_of_the_covered_members(self):
         policy, warnings = policy_values(self._policy(), self.family, None, self.user, START)
         expected = 100 + 100 * Decimal(_days(START, HEAD_AGES_OUT)) / PERIOD \
@@ -116,6 +122,7 @@ class MemberAgesTest(TestCase):
             self.assertIn(f"policy.validation.{key}", warnings)
         self.assertEqual(5, family_counts(self.no_limit, self.family)["total"], "[control] all members")
 
+    @mock.patch("policy.values.PolicyConfig.age_limit_pro_rata", True)
     def test_lump_sum_is_not_pro_rated(self):
         """a member within the lump sum adds nothing: their partial coverage takes nothing off"""
         lump = _product("AGELUMP", age_minimal=18, age_maximal=60, lump_sum=500, threshold=5)
@@ -209,3 +216,30 @@ class MemberAgesTest(TestCase):
         ips = self._ips(policy)
         self.assertNotIn("AGE000007", ips)
         self.assertEqual(EXPIRY, ips["AGE000008"])
+
+    # --- the policy service the contribution module calls on payment
+    def test_update_insuree_policies_dates_on_activation(self):
+        from policy.services import update_insuree_policies_dates
+        policy = self._policy()
+        update_insuree_policies(policy, -1)
+        policy.insuree_policies.filter(validity_to__isnull=True).update(expiry_date=EXPIRY)
+        pay_date = datetime.date(2024, 2, 1)
+        update_insuree_policies_dates(policy, activation_date=pay_date)
+        self.assertEqual(self.COVERED_EXPIRY, self._ips(policy))
+        self.assertEqual({"AGE000001": pay_date, "AGE000002": pay_date, "AGE000009": TEEN_COVERED_FROM},
+                         self._ips(policy, "effective_date"))
+
+    def test_update_insuree_policies_dates_without_age_limits(self):
+        """[control] the former contribution behaviour: the policy dates, the pay date on re-activation"""
+        from policy.services import update_insuree_policies_dates
+        policy = self._policy(product=self.no_limit)
+        update_insuree_policies(policy, -1)
+        Policy.objects.filter(id=policy.id).update(expiry_date=datetime.date(2025, 3, 1))
+        policy.refresh_from_db()
+        update_insuree_policies_dates(policy)
+        self.assertEqual({datetime.date(2025, 3, 1)}, set(self._ips(policy).values()))
+        policy.insuree_policies.filter(validity_to__isnull=True).update(start_date=datetime.date(2024, 2, 2))
+        update_insuree_policies_dates(policy, activation_date=datetime.date(2024, 4, 4))
+        self.assertEqual({datetime.date(2024, 4, 4)}, set(self._ips(policy, "effective_date").values()))
+        self.assertEqual({datetime.date(2024, 2, 2)}, set(self._ips(policy, "start_date").values()),
+                         "re-activation changes the effective date only")

@@ -20,7 +20,7 @@ from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.member_ages import (
     _date as _as_date, has_age_limits, members_coverage, covered_members, member_coverage,
-    insuree_policy_values, apply_member_dates,
+    insuree_policy_values, apply_member_dates, member_dates,
 )
 from policy.utils import MonthsAdd
 from product.models import Product
@@ -1277,6 +1277,33 @@ def update_insuree_policies(policy, audit_user_id):
             logger.debug("Created InsureePolicy(%s) %s - %s", ip.id, member.chf_id, policy.uuid)
         else:
             logger.debug("Updated InsureePolicy(%s) %s - %s", ip.id, member.chf_id, policy.uuid)
+
+
+def update_insuree_policies_dates(policy, activation_date=None):
+    """
+    The InsureePolicy dates of the current members of `policy`, for the contribution
+    module (a payment changing the policy) - the policy owns them:
+    - without `activation_date`: the policy dates changed (activation, renewal): every
+      member gets them;
+    - with `activation_date`: the policy was already effective, its members are
+      re-activated from that date (only the effective date changes).
+    A member covered for part of the period (product age limits, policy.member_ages)
+    keeps their own dates within those.
+    """
+    effective = activation_date or policy.effective_date
+    rows = policy.insuree_policies.filter(validity_to__isnull=True).select_related("insuree")
+    for insuree_policy in rows:
+        dates = member_dates(policy.product, insuree_policy.insuree, policy, effective_date=effective)
+        if dates is None:
+            dates = {"effective_date": effective} if activation_date else {
+                "start_date": policy.start_date,
+                "effective_date": policy.effective_date,
+                "expiry_date": policy.expiry_date,
+            }
+        changed = {field: value for field, value in dates.items()
+                   if _as_date(getattr(insuree_policy, field)) != _as_date(value)}
+        if changed:
+            InsureePolicy.objects.filter(id=insuree_policy.id).update(**changed)
 
 
 def policy_status_premium_paid(policy, effective_date):
