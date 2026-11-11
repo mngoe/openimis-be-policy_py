@@ -2,16 +2,20 @@
 The age limits of a product, member by member.
 
 A family policy covers the current members of the family, but a product may carry an age
-range (`age_minimal` / `age_maximal`). The age is taken on the policy start date:
+range (`age_minimal` / `age_maximal`). Each member is checked over the policy period:
 
-- a member who has not reached `age_minimal` yet is not covered;
-- coverage of a member ends on the day they reach `age_maximal`: a member reaching it on
-  or before the start date is not covered, one reaching it before the policy expiry is
-  covered until that day (their `InsureePolicy.expiry_date`, claims use it);
-- a member without date of birth cannot be checked, so is not covered.
+- coverage of a member starts on the policy start date, or on the day they reach
+  `age_minimal` when that falls within the period;
+- coverage of a member ends on the policy expiry date, or on the day they reach
+  `age_maximal` when that falls before it (that day included);
+- a member reaching `age_maximal` on or before the start date, or `age_minimal` after the
+  expiry date, is not covered; nor is a member without date of birth.
 
-The members out of the range are not counted in the policy value, and a policy no member
-can be covered by is refused. Without age limits every current member is covered.
+Each covered member gets their own dates on their InsureePolicy (claims check those), and
+pays the share of the period they are covered (pro-rata, see policy.values). The policy
+keeps its period unless every member ages out before it ends; a policy covering no member
+is refused. Without age limits every current member is covered the whole period, and the
+member dates are left as they are (`member_dates` gives nothing to apply).
 """
 from dataclasses import dataclass
 import datetime as py_datetime
@@ -23,8 +27,11 @@ from dateutil.relativedelta import relativedelta
 class MemberCoverage:
     member: object
     covered: bool
-    # the last covered day when the member ages out before the policy expiry, else None
+    # the first / last covered day when it differs from the policy start / expiry
+    starts_on: py_datetime.date = None
     ends_on: py_datetime.date = None
+    # the covered share of the policy period (1 = the whole period)
+    share: float = 1.0
     reason: str = None
 
 
@@ -43,23 +50,36 @@ def _date(value):
 
 
 def member_coverage(product, member, start_date, expiry_date=None):
-    """Is `member` covered by a policy of `product` starting on `start_date` ?"""
+    """
+    The coverage of `member` by a policy of `product` from `start_date` to `expiry_date`
+    (unknown expiry: checked on the start date only).
+    """
     if not has_age_limits(product):
         return MemberCoverage(member, True)
     dob = _date(member.dob)
     if dob is None:
-        return MemberCoverage(member, False, reason="no_dob")
+        return MemberCoverage(member, False, share=0, reason="no_dob")
     start = _date(start_date)
-    if product.age_minimal and relativedelta(start, dob).years < product.age_minimal:
-        return MemberCoverage(member, False, reason="below_min")
+    expiry = _date(expiry_date)
+    starts_on = ends_on = None
+    if product.age_minimal:
+        reaches_min = dob + relativedelta(years=product.age_minimal)
+        if reaches_min > (expiry or start):
+            return MemberCoverage(member, False, share=0, reason="below_min")
+        if reaches_min > start:
+            starts_on = reaches_min
     if product.age_maximal:
-        ages_out = dob + relativedelta(years=product.age_maximal)
-        if ages_out <= start:
-            return MemberCoverage(member, False, reason="above_max")
-        expiry = _date(expiry_date)
-        if expiry is not None and ages_out < expiry:
-            return MemberCoverage(member, True, ends_on=ages_out)
-    return MemberCoverage(member, True)
+        reaches_max = dob + relativedelta(years=product.age_maximal)
+        if reaches_max <= (starts_on or start):
+            return MemberCoverage(member, False, share=0, reason="above_max")
+        if expiry is not None and reaches_max < expiry:
+            ends_on = reaches_max
+    share = 1.0
+    if expiry is not None and (starts_on or ends_on):
+        period = (expiry - start).days + 1
+        covered = ((ends_on or expiry) - (starts_on or start)).days + 1
+        share = max(0.0, min(1.0, covered / period)) if period > 0 else 1.0
+    return MemberCoverage(member, True, starts_on=starts_on, ends_on=ends_on, share=share)
 
 
 def current_members(family):
@@ -83,23 +103,52 @@ def policy_expiry_date(coverages, expiry_date):
     return expiry_date
 
 
-def insuree_policy_expiry(product, member, policy):
-    """The expiry date of `member` on `policy`: the policy one, or the day they age out."""
-    coverage = member_coverage(product, member, policy.start_date, policy.expiry_date)
-    if coverage.ends_on and _date(policy.expiry_date) and coverage.ends_on < _date(policy.expiry_date):
-        return coverage.ends_on
-    return policy.expiry_date
-
-
-def apply_member_expiry(policy):
+def member_dates(product, member, policy, effective_date=None):
     """
-    Writes back the member expiry dates of `policy` (current InsureePolicy rows): a write
-    resetting them all to the policy expiry (the contribution module does on payment) is
-    corrected here.
+    The InsureePolicy dates of `member` on `policy`: {start_date, effective_date,
+    expiry_date}. None when the product has no age limits (nothing to adjust) or the
+    member is not covered. `effective_date`: the one of the member row (activation),
+    the policy one by default; a member covered later is effective from that day.
+    """
+    if not has_age_limits(product):
+        return None
+    coverage = member_coverage(product, member, policy.start_date, policy.expiry_date)
+    if not coverage.covered:
+        return None
+    effective = _date(effective_date if effective_date is not None else policy.effective_date)
+    if effective is not None and coverage.starts_on and coverage.starts_on > effective:
+        effective = coverage.starts_on
+    return {
+        "start_date": coverage.starts_on or _date(policy.start_date),
+        "effective_date": effective,
+        "expiry_date": coverage.ends_on or _date(policy.expiry_date),
+    }
+
+
+def insuree_policy_values(product, member, policy):
+    """The dates of a new InsureePolicy of `member`: theirs, or the policy ones."""
+    return member_dates(product, member, policy) or {
+        "start_date": policy.start_date,
+        "effective_date": policy.effective_date,
+        "expiry_date": policy.expiry_date,
+    }
+
+
+def apply_member_dates(policy):
+    """
+    Writes back the member dates of `policy` on its current InsureePolicy rows: a write
+    resetting them all to the policy dates (the contribution module does on payment) is
+    corrected here. A member the code gives no dates for is left as it is.
     """
     if policy is None or not has_age_limits(policy.product):
         return
-    for insuree_policy in policy.insuree_policies.filter(validity_to__isnull=True).select_related("insuree"):
-        expiry = insuree_policy_expiry(policy.product, insuree_policy.insuree, policy)
-        if _date(insuree_policy.expiry_date) != _date(expiry):
-            type(insuree_policy).objects.filter(id=insuree_policy.id).update(expiry_date=expiry)
+    rows = policy.insuree_policies.filter(validity_to__isnull=True).select_related("insuree")
+    for insuree_policy in rows:
+        dates = member_dates(policy.product, insuree_policy.insuree, policy,
+                             effective_date=insuree_policy.effective_date)
+        if dates is None:
+            continue
+        changed = {field: value for field, value in dates.items()
+                   if _date(getattr(insuree_policy, field)) != _date(value)}
+        if changed:
+            type(insuree_policy).objects.filter(id=insuree_policy.id).update(**changed)

@@ -79,6 +79,10 @@ msgid "policy.validation.member_not_covered_no_dob"
 msgstr "Insuree %(chf_id)s has no date of birth: not covered"
 
 #: policy/values.py
+msgid "policy.validation.member_coverage_starts"
+msgstr "Insuree %(chf_id)s reaches the minimum age of the product: covered from %(date)s"
+
+#: policy/values.py
 msgid "policy.validation.member_coverage_ends"
 msgstr "Insuree %(chf_id)s reaches the maximum age of the product: covered until %(date)s"
 

@@ -19,8 +19,8 @@ from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
 from policy.member_ages import (
-    _date as _as_date, has_age_limits, members_coverage, covered_members, member_coverage, insuree_policy_expiry,
-    apply_member_expiry,
+    _date as _as_date, has_age_limits, members_coverage, covered_members, member_coverage,
+    insuree_policy_values, apply_member_dates,
 )
 from policy.utils import MonthsAdd
 from product.models import Product
@@ -70,7 +70,7 @@ class PolicyService:
         if family is not None and product is not None and has_age_limits(product):
             # every current member is checked; a policy covering no one is refused
             start_date = data.get('start_date') or data.get('enroll_date')
-            coverages = members_coverage(product, family, start_date)
+            coverages = members_coverage(product, family, start_date, data.get('expiry_date'))
             logger.debug("Members covered %s", [(c.member.chf_id, c.covered, c.reason) for c in coverages])
             if not covered_members(coverages):
                 raise ValidationError(" ; ".join(
@@ -173,8 +173,8 @@ class PolicyService:
             if payer_uuid is not None:
                 premium_data["payer_uuid"] = payer_uuid
             premium_action(premium_data, user)
-            # the payment resets every member to the policy expiry date
-            apply_member_expiry(policy)
+            # the payment resets every member to the policy dates
+            apply_member_dates(policy)
         return policy
 
     def generate_contribution_receipt(self, product, enroll_date):
@@ -1249,8 +1249,8 @@ HOF{% endif %}
 def update_insuree_policies(policy, audit_user_id):
     """
     One InsureePolicy per covered member (policy.member_ages): a member outside the
-    product's age limits is not covered (their current row is closed), one ageing out
-    before the policy expiry is covered until that day.
+    product's age limits over the period is not covered (their current row is closed),
+    one reaching the minimum / maximum age within it is covered from / until that day.
     """
     logger.debug("Member Update Insuree policies")
     product = policy.product
@@ -1268,9 +1268,7 @@ def update_insuree_policies(policy, audit_user_id):
             insuree=member, policy=policy,
             defaults=dict(
                 enrollment_date=policy.enroll_date,
-                start_date=policy.start_date,
-                effective_date=policy.effective_date,
-                expiry_date=insuree_policy_expiry(product, member, policy),
+                **insuree_policy_values(product, member, policy),
                 offline=policy.offline,
                 audit_user_id=audit_user_id
             )

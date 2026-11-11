@@ -428,11 +428,13 @@ def on_policy_mutation(sender, **kwargs):
 
 def on_contribution_after_mutation(sender, **kwargs):
     """
-    A premium mutation resets the expiry date of every member of the policy to the
-    policy one (contribution.services._update_policy_insurees): the members ageing out
-    before it get their own date back (policy.member_ages).
+    A premium mutation resets the dates of every member of the policy to the policy
+    ones (contribution.services._update_policy_insurees / _activate_insurees): the
+    members covered for part of the period get their own dates back, the others are left
+    as they are (policy.member_ages.apply_member_dates). A workaround until upstream
+    gives the validity per member (OP-3321).
     """
-    from policy.member_ages import apply_member_expiry
+    from policy.member_ages import apply_member_dates
     data = kwargs.get('data') or {}
     policy_uuids = [data['policy_uuid']] if data.get('policy_uuid') else []
     if not policy_uuids and data.get('uuid'):
@@ -440,9 +442,9 @@ def on_contribution_after_mutation(sender, **kwargs):
         policy_uuids = list(Premium.objects.filter(uuid=data['uuid']).values_list('policy__uuid', flat=True))
     for policy in Policy.objects.filter(uuid__in=policy_uuids, validity_to__isnull=True):
         try:
-            apply_member_expiry(policy)
+            apply_member_dates(policy)
         except Exception:
-            logger.exception("Failed to restore the member expiry dates of policy %s", policy.uuid)
+            logger.exception("Failed to restore the member dates of policy %s", policy.uuid)
     return []
 
 

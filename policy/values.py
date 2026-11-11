@@ -59,25 +59,30 @@ def set_start_date(policy):
     ))
 
 
-def set_expiry_date(policy, family, enroll_date, members=None):
-    """
-    The policy period, cut only when every covered member ages out before its end (then
-    it ends with the last of them). A member ageing out earlier keeps their own expiry
-    date on their InsureePolicy (see policy.member_ages). Returns the warnings.
-    """
-    logger.debug("enroll_date %s", enroll_date)
+def period_expiry_date(policy):
+    """The end of the product insurance period from the policy start date."""
     product = policy.product
     from core import datetime, datetimedelta
 
     insurance_period = datetimedelta(
         months=product.insurance_period) if product.insurance_period % 12 != 0 else datetimedelta(
         years=product.insurance_period // 12)
-    expiry_date = (
+    return (
             datetime.date.from_ad_date(policy.start_date) +
             insurance_period -
             datetimedelta(days=1)
     ).to_ad_date()
-    coverages = members_coverage(product, family, policy.start_date, expiry_date, members=members)
+
+
+def set_expiry_date(policy, family, enroll_date, members=None):
+    """
+    The policy period, cut only when every covered member ages out before its end (then
+    it ends with the last of them). A member covered for part of the period keeps their
+    own dates on their InsureePolicy (see policy.member_ages). Returns the warnings.
+    """
+    logger.debug("enroll_date %s", enroll_date)
+    expiry_date = period_expiry_date(policy)
+    coverages = members_coverage(policy.product, family, policy.start_date, expiry_date, members=members)
     policy.expiry_date = policy_expiry_date(coverages, expiry_date)
     return coverage_warnings(coverages)
 
@@ -89,9 +94,13 @@ def coverage_warnings(coverages):
         if not coverage.covered:
             warnings.append(_("policy.validation.member_not_covered_%s" % coverage.reason)
                             % {'chf_id': chf_id})
-        elif coverage.ends_on:
-            warnings.append(_("policy.validation.member_coverage_ends")
-                            % {'chf_id': chf_id, 'date': coverage.ends_on})
+        else:
+            if coverage.starts_on:
+                warnings.append(_("policy.validation.member_coverage_starts")
+                                % {'chf_id': chf_id, 'date': coverage.starts_on})
+            if coverage.ends_on:
+                warnings.append(_("policy.validation.member_coverage_ends")
+                                % {'chf_id': chf_id, 'date': coverage.ends_on})
     if coverages and not any(coverage.covered for coverage in coverages):
         warnings.append(_("policy.validation.no_member_covered"))
     return warnings
@@ -218,22 +227,46 @@ def discount(policy, prev_policy):
         discount_renew(policy, prev_policy)
 
 
-def set_value(policy, family, prev_policy, members=None):
+def pro_rata_contributions(product, family, coverages):
+    """
+    The contributions of the covered members, a member covered for part of the period
+    paying that share of what they add (their marginal contribution: nothing when they
+    sit in the lump sum, their premium otherwise).
+    """
+    covered = covered_members(coverages)
+    contributions = Decimal(sum_contributions(product, family_counts(product, family, covered)))
+    reduction = Decimal(0)
+    for coverage in coverages:
+        if not coverage.covered or coverage.share >= 1:
+            continue
+        others = [member for member in covered if member.id != coverage.member.id]
+        marginal = contributions - Decimal(sum_contributions(product, family_counts(product, family, others)))
+        reduction += marginal * (1 - Decimal(str(coverage.share)))
+    return contributions - reduction
+
+
+def set_value(policy, family, prev_policy, members=None, coverages=None):
+    """`coverages`: the member coverages (policy.member_ages) to pro-rate the
+    contributions on; general assembly and registration count the covered members."""
     product = policy.product
     f_counts = family_counts(policy.product, family, members)
-    contributions = sum_contributions(product, f_counts)
+    if coverages is not None:
+        contributions = pro_rata_contributions(product, family, coverages)
+    else:
+        contributions = sum_contributions(product, f_counts)
     general_assembly = sum_general_assemblies(product, f_counts)
     registration = sum_registrations(policy, product, f_counts)
-    policy.value = Decimal(contributions + general_assembly + registration)
+    policy.value = round(Decimal(contributions + general_assembly + registration), 2)
     discount(policy, prev_policy)
 
 
 def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
     """`members`: the insurees to count instead of the active members of `family`;
-    only those the product's age limits cover are counted (policy.member_ages)."""
+    only those the product's age limits cover are counted, pro-rata of their covered
+    share of the period (policy.member_ages)."""
     set_start_date(policy)
     coverages = members_coverage(policy.product, family, policy.start_date,
-                                 members=members or None)
+                                 period_expiry_date(policy), members=members or None)
     covered = covered_members(coverages)
     member_count = len(covered)
     max_members = policy.product.max_members
@@ -242,5 +275,5 @@ def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
     if above_max:
         warnings.append(_("policy.validation.members_count_above_max") % {'max': max_members, 'count': member_count})
     warnings += set_expiry_date(policy, family, enroll_date, members=members or None)
-    set_value(policy, family, prev_policy, covered)
+    set_value(policy, family, prev_policy, covered, coverages)
     return policy, warnings
