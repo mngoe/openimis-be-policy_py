@@ -471,7 +471,8 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
                 enrollDate: "2024-04-07"
                     startDate: "2024-06-01"
                     expiryDate: "2025-05-31"
-                    value: "10000.00"
+                    value: "10000.00",
+                    "periodicity": "M",
                     productId: {self.product.id}
                     familyId: {self.insuree.family.id}
                     contributionPlanId: "{plan_id}"
