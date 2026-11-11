@@ -28,10 +28,17 @@ def cycle_start(product, cycle, ref_date):
         return start
 
 
-def set_start_date(policy):
+def set_start_date(policy, earliest_start=None):
+    """
+    `earliest_start`: the first day a member is covered (product age limits,
+    policy.member_ages): when later than the enrolment, the policy starts from it (cycles
+    apply after).
+    """
     from core import datetime, datetimedelta
     product = policy.product
     ref_enroll_date = policy.enroll_date
+    if earliest_start is not None and earliest_start > _plain_date(ref_enroll_date):
+        ref_enroll_date = earliest_start
     if policy.stage == Policy.STAGE_NEW and product.administration_period:
         ref_enroll_date = (
                 datetime.date.from_ad_date(ref_enroll_date) +
@@ -58,6 +65,22 @@ def set_start_date(policy):
         "%s-%s" % (product.start_cycle_1, ref_date.year + 1),
         '%d-%m-%Y'
     ))
+
+
+def _plain_date(value):
+    if isinstance(value, py_datetime.datetime):
+        return value.date()
+    if isinstance(value, str):
+        return py_datetime.datetime.strptime(value[:10], "%Y-%m-%d").date()
+    return value
+
+
+def earliest_covered_start(policy, coverages):
+    """The first day a member is covered, when no member is covered from the start."""
+    covered = [coverage for coverage in coverages if coverage.covered]
+    if covered and all(coverage.starts_on for coverage in covered):
+        return min(coverage.starts_on for coverage in covered)
+    return None
 
 
 def period_expiry_date(policy):
@@ -270,6 +293,12 @@ def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
     set_start_date(policy)
     coverages = members_coverage(policy.product, family, policy.start_date,
                                  period_expiry_date(policy), members=members or None)
+    # no member covered from the start: the policy starts with the first of them
+    earliest = earliest_covered_start(policy, coverages)
+    if earliest is not None:
+        set_start_date(policy, earliest_start=earliest)
+        coverages = members_coverage(policy.product, family, policy.start_date,
+                                     period_expiry_date(policy), members=members or None)
     covered = covered_members(coverages)
     member_count = len(covered)
     max_members = policy.product.max_members

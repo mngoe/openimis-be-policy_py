@@ -1291,6 +1291,9 @@ def update_insuree_policies_dates(policy, activation_date=None):
     keeps their own dates within those.
     """
     effective = activation_date or policy.effective_date
+    if effective is not None and policy.start_date is not None \
+            and _as_date(effective) < _as_date(policy.start_date):
+        effective = policy.start_date  # never effective before the start
     rows = policy.insuree_policies.filter(validity_to__isnull=True).select_related("insuree")
     for insuree_policy in rows:
         dates = member_dates(policy.product, insuree_policy.insuree, policy, effective_date=effective)
@@ -1317,6 +1320,11 @@ def policy_status_premium_paid(policy, effective_date):
                     if prod:
                         if program.idProgram == prod.program.idProgram:
                             raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme pour un même assuré")                      
+        # effective from the payment, never before the start: a policy dated in the
+        # future is not active on the payment already
+        if effective_date is not None and policy.start_date is not None \
+                and _as_date(effective_date) < _as_date(policy.start_date):
+            effective_date = policy.start_date
         policy.effective_date = effective_date
         policy.status = Policy.STATUS_ACTIVE
     else:

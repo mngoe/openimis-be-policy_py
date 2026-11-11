@@ -117,8 +117,9 @@ def member_dates(product, member, policy, effective_date=None):
     if not coverage.covered:
         return None
     effective = _date(effective_date if effective_date is not None else policy.effective_date)
-    if effective is not None and coverage.starts_on and coverage.starts_on > effective:
-        effective = coverage.starts_on
+    first_day = coverage.starts_on or _date(policy.start_date)
+    if effective is not None and first_day and first_day > effective:
+        effective = first_day  # never effective before the member (or the policy) starts
     return {
         "start_date": coverage.starts_on or _date(policy.start_date),
         "effective_date": effective,
@@ -139,11 +140,18 @@ def apply_member_dates(policy):
     """
     Writes back the member dates of `policy` on its current InsureePolicy rows: a write
     resetting them all to the policy dates (the contribution module does on payment) is
-    corrected here. A member the code gives no dates for is left as it is.
+    corrected here. A member the code gives no dates for is left as it is, except that no
+    member is effective before the policy start (a payment of a policy dated in the
+    future).
     """
-    if policy is None or not has_age_limits(policy.product):
+    if policy is None:
         return
     rows = policy.insuree_policies.filter(validity_to__isnull=True).select_related("insuree")
+    if not has_age_limits(policy.product):
+        # the payment activates from its date: never before the policy start
+        if policy.start_date is not None:
+            rows.filter(effective_date__lt=policy.start_date).update(effective_date=policy.start_date)
+        return
     for insuree_policy in rows:
         dates = member_dates(policy.product, insuree_policy.insuree, policy,
                              effective_date=insuree_policy.effective_date)

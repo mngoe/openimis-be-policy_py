@@ -243,3 +243,45 @@ class MemberAgesTest(TestCase):
         self.assertEqual({datetime.date(2024, 4, 4)}, set(self._ips(policy, "effective_date").values()))
         self.assertEqual({datetime.date(2024, 2, 2)}, set(self._ips(policy, "start_date").values()),
                          "re-activation changes the effective date only")
+
+    # --- the policy starts with its first covered member
+    def test_policy_starts_with_the_first_covered_member(self):
+        teen = create_test_insuree(with_family=True, is_head=True,
+                                   custom_props={"chf_id": "AGE000011", "dob": datetime.date(2006, 5, 1)})
+        policy, warnings = policy_values(self._policy(head=teen), teen.family, None, self.user, START)
+        self.assertEqual(TEEN_COVERED_FROM, policy.start_date, "no one covered before the teen turns 18")
+        self.assertEqual(datetime.date(2025, 4, 30), policy.expiry_date, "the period runs from that start")
+        self.assertNotIn("policy.validation.member_coverage_starts", warnings)
+
+    def test_policy_keeps_its_start_when_someone_is_covered_from_it(self):
+        policy, _ = policy_values(self._policy(), self.family, None, self.user, START)
+        self.assertEqual(START, policy.start_date)
+
+    # --- activation never before the start (a policy dated in the future)
+    @mock.patch("policy.services.PolicyConfig.activation_option", 1)
+    @mock.patch("policy.services.PolicyConfig.ACTIVATION_OPTION_CONTRIBUTION", 1)
+    def test_future_policy_effective_from_its_start(self):
+        from policy.services import policy_status_premium_paid
+        head = create_test_insuree(with_family=True, is_head=True,
+                                   custom_props={"chf_id": "AGE000012", "dob": datetime.date(1990, 1, 1)})
+        policy = self._policy(product=self.no_limit, head=head, status=Policy.STATUS_IDLE)
+        policy_status_premium_paid(policy, START - datetime.timedelta(days=20))
+        self.assertEqual(START, policy.effective_date)
+        policy_status_premium_paid(policy, datetime.date(2024, 2, 2))
+        self.assertEqual(datetime.date(2024, 2, 2), policy.effective_date)
+
+    def test_reactivation_before_the_start_is_moved_to_it(self):
+        from policy.services import update_insuree_policies_dates
+        policy = self._policy(product=self.no_limit)
+        update_insuree_policies(policy, -1)
+        update_insuree_policies_dates(policy, activation_date=START - datetime.timedelta(days=20))
+        self.assertEqual({START}, set(self._ips(policy, "effective_date").values()))
+
+    def test_payment_reset_before_the_start_corrected_without_age_limits(self):
+        """contribution._activate_insurees sets the pay date: the listener moves it to the start"""
+        policy = self._policy(product=self.no_limit)
+        update_insuree_policies(policy, -1)
+        policy.insuree_policies.filter(validity_to__isnull=True).update(
+            effective_date=START - datetime.timedelta(days=20))
+        apply_member_dates(policy)
+        self.assertEqual({START}, set(self._ips(policy, "effective_date").values()))
