@@ -23,6 +23,19 @@ def policy_village(policy):
     return family_village(policy.family) if policy is not None else None
 
 
+def scoped_policy(user, policy_uuid):
+    """
+    The current policy `policy_uuid` if the user may see it, else None: a policy outside
+    the user's scope, or already deleted, answers "does not exist" (its existence is not
+    disclosed). The right of the write is checked next, on the policy's village.
+    """
+    return Policy.get_queryset(Policy.objects.filter(uuid=policy_uuid), user).first()
+
+
+def does_not_exist(policy_uuid, message_key):
+    return {'title': policy_uuid, 'list': [{'message': _(message_key) % {'id': policy_uuid}}]}
+
+
 class PolicyInputType(OpenIMISMutation.Input):
     # several fields (such as status, stage,...) are managed "internally"
     # and only initialized/updated via dedicated mutations (renew , cancel,...)
@@ -150,20 +163,16 @@ class SuspendPoliciesMutation(OpenIMISMutation):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
-                    # existence only: the scope is checked below by has_enrolment_perms
-                    # (district + ENROLMENT link), which answers "unauthorized"
-                    policy = Policy.objects.filter(uuid=policy_uuid).first()
+                    policy = scoped_policy(user, policy_uuid)
                     if policy is None:
-                        errors += {
-                            'title': policy_uuid,
-                            'list': [{'message': _(
-                                "policy.mutation.id_does_not_exist") % {'id': policy_uuid}}]
-                        }
+                        errors.append(does_not_exist(policy_uuid, "policy.mutation.id_does_not_exist"))
                         continue
                     if not has_enrolment_perms(user, perms, [policy_village(policy)]):
                         errors.append({'title': policy_uuid, 'list': [{'message': _("unauthorized")}]})
                         continue
-                    errors += PolicyService(user).set_suspended(user, policy)
+                    failure = PolicyService(user).set_suspended(user, policy)
+                    if failure:
+                        errors.append(failure)
                 if len(errors) == 1:
                     errors = errors[0]['list']
                 return errors
@@ -187,19 +196,21 @@ class ForcePoliciesExpirationMutation(OpenIMISMutation):
                 if type(user) is AnonymousUser or not user.id:
                     raise ValidationError(
                         _("mutation.authentication_required"))
-                if not user.has_perms(PolicyConfig.gql_mutation_force_expiration_perms):
+                perms = PolicyConfig.gql_mutation_force_expiration_perms
+                if not can_query(user, perms):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
-                    policy = Policy.objects.filter(uuid=policy_uuid).first()
+                    policy = scoped_policy(user, policy_uuid)
                     if policy is None:
-                        errors += {
-                            'title': policy_uuid,
-                            'list': [{'message': _(
-                                "policy.mutation.id_does_not_exist") % {'id': policy_uuid}}]
-                        }
+                        errors.append(does_not_exist(policy_uuid, "policy.mutation.id_does_not_exist"))
                         continue
-                    errors += PolicyService(user).set_expiration_forced(user, policy)
+                    if not has_enrolment_perms(user, perms, [policy_village(policy)]):
+                        errors.append({'title': policy_uuid, 'list': [{'message': _("unauthorized")}]})
+                        continue
+                    failure = PolicyService(user).set_expiration_forced(user, policy)
+                    if failure:
+                        errors.append(failure)
                 if len(errors) == 1:
                     errors = errors[0]['list']
                 return errors
@@ -226,22 +237,16 @@ class DeletePoliciesMutation(OpenIMISMutation):
                     raise PermissionDenied(_("unauthorized"))
                 errors = []
                 for policy_uuid in data["uuids"]:
-                    # existence only: the scope is checked below by has_enrolment_perms
-                    # (district + ENROLMENT link), which answers "unauthorized"
-                    policy = Policy.objects \
-                        .filter(uuid=policy_uuid) \
-                        .first()
+                    policy = scoped_policy(user, policy_uuid)
                     if policy is None:
-                        errors += {
-                            'title': policy_uuid,
-                            'list': [{'message': _(
-                                "policy.validation.id_does_not_exist") % {'id': policy_uuid}}]
-                        }
+                        errors.append(does_not_exist(policy_uuid, "policy.validation.id_does_not_exist"))
                         continue
                     if not has_enrolment_perms(user, perms, [policy_village(policy)]):
                         errors.append({'title': policy_uuid, 'list': [{'message': _("unauthorized")}]})
                         continue
-                    errors += PolicyService(user).set_deleted(policy)
+                    failure = PolicyService(user).set_deleted(policy)
+                    if failure:
+                        errors.append(failure)
                 if len(errors) == 1:
                     errors = errors[0]['list']
                 return errors

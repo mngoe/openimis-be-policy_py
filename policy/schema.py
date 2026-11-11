@@ -17,6 +17,7 @@ from .apps import PolicyConfig
 from django.utils.translation import gettext as _
 import graphene_django_optimizer as gql_optimizer
 from graphene_django.filter import DjangoFilterConnectionField
+from core.apps import CoreConfig
 from core.models import Officer
 from .models import PolicyMutation, Policy
 from django.core.exceptions import ValidationError
@@ -345,8 +346,17 @@ class Query(graphene.ObjectType):
             region=None,
             **kwargs
     ):
-        # no dedicated right: the officers listed are narrowed by the location / UBA scope
-        if info.context.user.is_anonymous:
+        # officers are users: the users read right (or the enrolment officers one) opens
+        # the list; so does a policy write right, the policy form picks the officer here.
+        # The list is then narrowed by the location / UBA scope.
+        user = info.context.user
+        if user.is_anonymous or not (
+                user.has_perms(CoreConfig.gql_query_users_perms)
+                or user.has_perms(CoreConfig.gql_query_enrolment_officers_perms)
+                or any(can_query(user, perms) for perms in (
+                    PolicyConfig.gql_mutation_create_policies_perms,
+                    PolicyConfig.gql_mutation_edit_policies_perms,
+                    PolicyConfig.gql_mutation_renew_policies_perms))):
             raise PermissionDenied(_("unauthorized"))
         queryset = Officer.get_queryset(None, info.context.user).filter(
             *Officer.filter_location(

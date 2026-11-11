@@ -16,6 +16,7 @@ from django.test import TestCase, override_settings
 from django.utils.translation import gettext as _
 
 from claim.apps import ClaimConfig
+from core.apps import CoreConfig
 from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from core.test_helpers import (
     create_security_tree, create_right_only_user, get_test_token, perm_ids, create_test_officer,
@@ -59,7 +60,8 @@ WRITE_RIGHTS = _u(perm_ids(PolicyConfig.gql_mutation_create_policies_perms),
                   perm_ids(PolicyConfig.gql_mutation_edit_policies_perms),
                   perm_ids(PolicyConfig.gql_mutation_renew_policies_perms),
                   perm_ids(PolicyConfig.gql_mutation_suspend_policies_perms),
-                  perm_ids(PolicyConfig.gql_mutation_delete_policies_perms))
+                  perm_ids(PolicyConfig.gql_mutation_delete_policies_perms),
+                  perm_ids(PolicyConfig.gql_mutation_force_expiration_perms))
 
 
 def _build(tree, prefix):
@@ -90,7 +92,11 @@ class PolicyReadScopeTest(openIMISGraphQLTestCase):
         cls.claim_only = create_right_only_user(
             "sppclaim", perm_ids(ClaimConfig.gql_query_claims_perms), [cls.t.d1.id])
         cls.claim_token = get_test_token(cls.claim_only)
+        cls.officer_a = create_test_officer(custom_props={"code": "SPPOFA"}, villages=[cls.t.v1])
         cls.officer_b = create_test_officer(custom_props={"code": "SPPOFB"}, villages=[cls.t.v2])
+        cls.users_reader = create_right_only_user(
+            "sppusers", perm_ids(CoreConfig.gql_query_users_perms), [cls.t.d1.id])
+        cls.users_token = get_test_token(cls.users_reader)
 
     def setUp(self):
         cache.clear()
@@ -152,18 +158,38 @@ class PolicyReadScopeTest(openIMISGraphQLTestCase):
         self.assertTrue(content.get("errors") or (content.get("data") or {}).get("policyNumberValidity") is None,
                         content)
 
-    def test_policy_officers_refuses_anonymous(self):
-        """[DECISION 2026-11-10] no dedicated officers right (covered by UBA / location
-        scope), but anonymous callers are refused."""
-        content = self._q('{ policyOfficers(search: "SPPOF") { edges { node { code } } } }')
+    def _officer_codes(self, token=None):
+        content = self._q('{ policyOfficers(search: "SPPOF") { edges { node { code } } } }', token)
         edges = ((content.get("data") or {}).get("policyOfficers") or {}).get("edges") or []
-        self.assertTrue(content.get("errors") or not edges, content)
+        return content, [e["node"]["code"] for e in edges]
+
+    def test_policy_officers_refuses_anonymous(self):
+        """[NEW] anonymous callers are refused."""
+        content, codes = self._officer_codes()
+        self.assertTrue(content.get("errors") or not codes, content)
+
+    def test_policy_officers_requires_users_right(self):
+        """[DECISION 2026-11-11] officers are users: the policy read right alone does not
+        open `policyOfficers`, the users read right does."""
+        content, codes = self._officer_codes(self.token)
+        self.assertIn("errors", content)
+        self.assertEqual([], codes)
+
+    def test_policy_officers_open_to_the_policy_form(self):
+        """[DECISION 2026-11-11] a policy write right opens the officer picker of the form."""
+        writer = create_right_only_user(
+            "sppwriter", perm_ids(PolicyConfig.gql_mutation_create_policies_perms), [self.t.d1.id])
+        content, codes = self._officer_codes(get_test_token(writer))
+        self.assertNotIn("errors", content, content.get("errors"))
+        self.assertIn("SPPOFA", codes)
+        self.assertNotIn("SPPOFB", codes)
 
     def test_gql_policy_officers_scoped(self):
-        """[NEW] `policyOfficers` does not list officers of district 2 to a district-1 user."""
-        content = self._q('{ policyOfficers(search: "SPPOF") { edges { node { code } } } }', self.token)
-        edges = ((content.get("data") or {}).get("policyOfficers") or {}).get("edges") or []
-        self.assertNotIn("SPPOFB", [e["node"]["code"] for e in edges])
+        """[NEW] `policyOfficers` lists the district-1 officers, not those of district 2."""
+        content, codes = self._officer_codes(self.users_token)
+        self.assertNotIn("errors", content, content.get("errors"))
+        self.assertIn("SPPOFA", codes)
+        self.assertNotIn("SPPOFB", codes)
 
     def test_gql_policies_without_right_denied(self):
         """[REF policy/tests/test_rights_policies.py] no right -> error."""
@@ -241,3 +267,53 @@ class PolicyWriteScopeTest(TestCase):
         self.assertTrue(_unauthorized(lambda: DeletePoliciesMutation.async_mutate(
             reader, uuids=[str(self.pol_a.uuid)])))
         self.assertIsNone(Policy.objects.get(id=self.pol_a.id).validity_to)
+
+    def _messages(self, result):
+        return json.dumps(result or [], default=str)
+
+    def test_delete_foreign_policy_does_not_exist(self):
+        """[NEW] a district-2 policy is not disclosed: "does not exist", not "unauthorized"."""
+        from policy.gql_mutations import DeletePoliciesMutation
+        result = DeletePoliciesMutation.async_mutate(self.user_a, uuids=[str(self.pol_b.uuid)])
+        self.assertIn("policy.validation.id_does_not_exist", self._messages(result))
+        self.assertNotIn("unauthorized", self._messages(result).lower())
+
+    def test_delete_twice_does_not_exist(self):
+        """[NEW] a deleted policy is no longer a target (it was deleted again before)."""
+        from policy.gql_mutations import DeletePoliciesMutation, SuspendPoliciesMutation
+        DeletePoliciesMutation.async_mutate(self.user_a, uuids=[str(self.pol_a.uuid)])
+        for mutation in (DeletePoliciesMutation, SuspendPoliciesMutation):
+            result = mutation.async_mutate(self.user_a, uuids=[str(self.pol_a.uuid)])
+            self.assertIn("does_not_exist", self._messages(result), mutation.__name__)
+        self.assertEqual(1, Policy.objects.filter(legacy_id=self.pol_a.id).count(), "history copied twice")
+
+    def test_unknown_uuid_reports_does_not_exist(self):
+        """[NEW] an unknown uuid gives its own error (the dict was spread into the list)."""
+        from policy.gql_mutations import (
+            DeletePoliciesMutation, SuspendPoliciesMutation, ForcePoliciesExpirationMutation)
+        unknown = ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"]
+        for mutation in (DeletePoliciesMutation, SuspendPoliciesMutation, ForcePoliciesExpirationMutation):
+            result = mutation.async_mutate(self.user_a, uuids=unknown)
+            self.assertEqual(unknown, [error.get("title") for error in result], mutation.__name__)
+            self.assertIn("does_not_exist", self._messages(result), mutation.__name__)
+
+    def test_force_expiration_foreign_policy_refused(self):
+        """[NEW] ForcePoliciesExpiration on a district-2 policy leaves it untouched."""
+        from policy.gql_mutations import ForcePoliciesExpirationMutation
+        ForcePoliciesExpirationMutation.async_mutate(self.user_a, uuids=[str(self.pol_b.uuid)])
+        self.assertNotEqual(Policy.STATUS_EXPIRED, Policy.objects.get(id=self.pol_b.id).status)
+
+    def test_force_expiration_own_policy_allowed(self):
+        """[control] the same on a district-1 policy works."""
+        from policy.gql_mutations import ForcePoliciesExpirationMutation
+        result = ForcePoliciesExpirationMutation.async_mutate(self.user_a, uuids=[str(self.pol_a.uuid)])
+        self.assertEqual([], result)
+        self.assertEqual(Policy.STATUS_EXPIRED, Policy.objects.get(id=self.pol_a.id).status)
+
+    def test_force_expiration_without_right_refused(self):
+        """[NEW] no force-expiration right -> refused."""
+        from policy.gql_mutations import ForcePoliciesExpirationMutation
+        reader = create_right_only_user("spqfreader", QUERY_RIGHTS, [self.t.d1.id])
+        self.assertTrue(_unauthorized(lambda: ForcePoliciesExpirationMutation.async_mutate(
+            reader, uuids=[str(self.pol_a.uuid)])))
+        self.assertNotEqual(Policy.STATUS_EXPIRED, Policy.objects.get(id=self.pol_a.id).status)

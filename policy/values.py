@@ -89,6 +89,10 @@ def set_expiry_date(policy, family, enroll_date):
     elif not product.age_maximal:
         logger.debug("The product does not have the max age")
     policy.expiry_date = expiry_date
+    if product.age_maximal and not insuree_dob:
+        # the service refuses to save it; the values preview warns instead of failing
+        return [_("policy.validation.max_age_not_applied_without_dob")]
+    return []
 
 
 def family_counts(product, family):
@@ -232,6 +236,6 @@ def policy_values(policy, family, prev_policy, user, enroll_date, members=None):
     if above_max:
         warnings.append(_("policy.validation.members_count_above_max") % {'max': max_members, 'count': member_count})
     set_start_date(policy)
-    set_expiry_date(policy, family, enroll_date)
+    warnings += set_expiry_date(policy, family, enroll_date)
     set_value(policy, family, prev_policy)
     return policy, warnings

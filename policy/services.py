@@ -49,16 +49,20 @@ class PolicyService:
         insurees = Insuree.objects.filter(family=familyid)
         product_id = data.get('product_id', None)
         # expiry_date = data.get('expiry_date', None)
-        if insurees and product_id:
+        product = Product.objects.get(id=product_id) if insurees and product_id else None
+        if product is not None and (product.age_minimal or product.age_maximal):
             member = insurees[0]
             logger.debug("Dob %s", member.dob)
+            if not member.dob:
+                # the age limits of the product cannot be checked without it
+                raise ValidationError(_("policy.validation.member_without_dob") % {
+                    'chf_id': member.chf_id})
             date_format = "%Y-%m-%d"
             today = py_datetime.strptime(str(py_datetime.now().date()), date_format)
             insuree_dob = py_datetime.strptime(str(member.dob), date_format)
             delta = today - insuree_dob
             age_patient = int(round(delta.days / 365.0))
             logger.debug("age_patient %s", age_patient)
-            product = Product.objects.get(id=product_id)
             logger.debug("Age Max sur le produit %s", product.age_maximal)
             logger.debug("Age Min sur le produit %s", product.age_minimal)
             # the_date = py_datetime.strptime(

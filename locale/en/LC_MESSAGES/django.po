@@ -65,3 +65,11 @@ msgstr "On idle policies can be updated"
 #: policy/values.py:178
 msgid "policy.validation.members_count_above_max"
 msgstr "Number of insurees %(count)s is above policy maximum: %(max)s"
+
+#: policy/services.py
+msgid "policy.validation.member_without_dob"
+msgstr "Insuree %(chf_id)s has no date of birth: the age limits of the product cannot be checked"
+
+#: policy/values.py
+msgid "policy.validation.max_age_not_applied_without_dob"
+msgstr "No date of birth: the maximum age of the product was not applied to the expiry date"

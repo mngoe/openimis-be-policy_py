@@ -196,7 +196,8 @@ class EnrolmentUbaPolicyRightsTest(TestCase):
 
         errors = DeletePoliciesMutation.async_mutate(
             self.officer_user, uuids=[self.linked_policy.uuid, self.other_policy.uuid])
-        self.assertEqual([{"message": _("unauthorized")}], errors)
+        # the policy of the unlinked village is outside the user's scope: not disclosed
+        self.assertEqual([{"message": _("policy.validation.id_does_not_exist")}], errors)
         self.assertFalse(Policy.objects.filter(
             id=self.linked_policy.id, validity_to__isnull=True).exists())
         self.assertTrue(Policy.objects.filter(
