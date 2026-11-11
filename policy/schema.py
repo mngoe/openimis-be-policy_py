@@ -3,6 +3,8 @@ from core.schema import (
     OrderedDjangoFilterConnectionField,
     signal_mutation_module_validate,
 )
+from core.gql import legacy_row_filters, row_filter_arguments
+from core.models import Audits, Validity
 from core.utils import filter_validity
 import graphene
 from django.core.exceptions import PermissionDenied
@@ -71,7 +73,7 @@ class Query(graphene.ObjectType):
         district_id=graphene.Int(),
         balance_lte=graphene.Float(),
         balance_gte=graphene.Float(),
-        showHistory=graphene.Boolean(),
+        **row_filter_arguments(),
         showInactive=graphene.Boolean(),
         confirmationType=graphene.String(),
         orderBy=graphene.List(of_type=graphene.String),
@@ -171,8 +173,14 @@ class Query(graphene.ObjectType):
         if not can_query(info.context.user, PolicyConfig.gql_query_policies_perms):
             raise PermissionDenied(_("unauthorized"))
         query = Policy.objects
-        if not kwargs.get('showHistory', False):
-            query = query.filter(*filter_validity(**kwargs))
+        # validity / audits are applied by Policy.get_queryset through PolicyGQLType
+        # (OP-2029); showHistory keeps its legacy meaning: no validity filter at all,
+        # deleted policies and history copies included. isDeleted overrides it.
+        show_history = kwargs.get('show_history', False)
+        legacy_row_filters(
+            info, kwargs,
+            validity=Validity.ALL if show_history else Validity.NOW,
+            audits=Audits.ALL if show_history else None)
         if kwargs.get('showInactive', False):
             family_count = Insuree.objects.values('family_id')\
                 .filter(validity_to__isnull=True).annotate(m_count=Count('id'))
