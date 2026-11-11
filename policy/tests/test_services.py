@@ -349,6 +349,7 @@ class EligibilityServiceTestCase(TestCase):
         errors = validate_claim(claim, True)
         errors += validate_assign_prod_to_claimitems_and_services(claim)
         errors += process_dedrem(claim, -1, True)
+        print("errors found:", errors)
         self.assertEqual(len(errors), 0)
 
         def signal_before(sender, **kwargs):
