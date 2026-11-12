@@ -365,6 +365,8 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         # Still get the policy even when validity_to is not null because of showDeleted true
         self.assertResponseNoErrors(response)
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
+        self.policy.validity_to = None
+        self.policy.save()
 
         response = self.query(
             '''
@@ -395,8 +397,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertResponseNoErrors(response)
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
-        self.policy.validity_to = None
-        self.policy.save()
    
     def test_insuree_policy_query(self):
         
