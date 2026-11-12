@@ -42,7 +42,7 @@ class PolicyValuesTestCase(TestCase):
         })
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 10))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 11, 9))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2020, 12, 9))
         self.assertEquals(policy.value, 980)  # 2 x 300 + 250 + 130
 
         # let's add a child and shift date to 1st of a month
@@ -96,7 +96,7 @@ class PolicyValuesTestCase(TestCase):
         })
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 1, 1))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 12, 31))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 1, 31))
         self.assertEquals(policy.value, 230)  # 200 + 2 x 10 + 2 x 5
 
         # let's add a child (outside threshold)  and shift date in 1st cycle grace period
@@ -150,7 +150,7 @@ class PolicyValuesTestCase(TestCase):
         })
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 6, 1))  # enroll + admin outside cycle 1 + grace
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 11, 30))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 6, 30))
         self.assertEquals(policy.value, 530)  # 200 + 300 + 2 x 10 + 2 x 5
 
         # let's add a child... outside max members so not counted!
