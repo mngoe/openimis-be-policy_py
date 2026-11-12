@@ -6,11 +6,13 @@ from product.test_helpers import create_test_product
 from insuree.models import Relation
 from policy.values import *
 from policy.test_helpers import create_test_policy
+from core.test_helpers import create_test_interactive_user
 from core.apps import CoreConfig
 from dateutil.relativedelta import relativedelta
 
 class PolicyValuesTestCase(TestCase):
     test_child_dob=py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority-2)
+    user = create_test_interactive_user
     def test_new_policy_basis(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
         spouse, _ = Relation.objects.get_or_create(
@@ -38,7 +40,7 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2020, 11, 10),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None)
+        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 10))
         self.assertEquals(policy.expiry_date, core.datetime.date(2021, 11, 9))
         self.assertEquals(policy.value, 980)  # 2 x 300 + 250 + 130
@@ -54,7 +56,7 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2020, 11, 1),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None)
+        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 1))
         self.assertEquals(policy.expiry_date, core.datetime.date(2021, 10, 31))
         self.assertEquals(policy.value, 1180)  # 2 x 300 + 200 + 250 + 130
@@ -92,7 +94,7 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2020, 11, 10),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None)
+        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 1, 1))
         self.assertEquals(policy.expiry_date, core.datetime.date(2021, 12, 31))
         self.assertEquals(policy.value, 230)  # 200 + 2 x 10 + 2 x 5
@@ -108,7 +110,7 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2021, 1, 11),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None)
+        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 1, 1))
         self.assertEquals(policy.expiry_date, core.datetime.date(2021, 12, 31))
         self.assertEquals(policy.value, 445)  # 200 + 1 x 200 + 3 x 10 + 3 x 5
@@ -146,7 +148,7 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2021, 1, 10),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None)
+        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 6, 1))  # enroll + admin outside cycle 1 + grace
         self.assertEquals(policy.expiry_date, core.datetime.date(2021, 11, 30))
         self.assertEquals(policy.value, 530)  # 200 + 300 + 2 x 10 + 2 x 5
@@ -164,7 +166,7 @@ class PolicyValuesTestCase(TestCase):
                 "enroll_date": core.datetime.date(2021, 12, 11),
             }, check = False)
 
-        policy, warnings = policy_values(policy, head_insuree.family, None)
+        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2022, 1, 1))  # enroll + admin in cycle 1 + grace
         self.assertEquals(policy.expiry_date, core.datetime.date(2022, 6, 30))
         self.assertEquals(policy.value, 530)  # 200 + 300 + 2 x 10 + 2 x 5
