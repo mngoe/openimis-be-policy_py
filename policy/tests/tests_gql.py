@@ -158,7 +158,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             '''
     
             query policiesByInsuree($chfid: String!) {
-                policiesByInsuree(chfId:$chfid)
+                policiesByInsuree(chfId:$chfid, showDeleted: true)
                 {
                     totalCount
                     pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
@@ -181,7 +181,65 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         # This validates the status code and if you get errors
         self.assertResponseNoErrors(response)
         self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 2)
-        
+
+        self.policy.validity_to = "2019-01-01"
+        self.policy.save()
+        response = self.query(
+            '''
+    
+            query policiesByInsuree($chfid: String!) {
+                policiesByInsuree(chfId:$chfid, showDeleted: true)
+                {
+                    totalCount
+                    pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
+                    edges
+                    {
+                        node
+                        {
+                            policyUuid,productCode,productName,officerCode,officerName,enrollDate,effectiveDate,startDate,expiryDate,status,policyValue,balance,ded,dedInPatient,dedOutPatient,ceiling,ceilingInPatient,ceilingOutPatient
+                        }
+                    }
+                }
+            }
+            ''',
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
+            variables={'chfid': self.insuree.chf_id}
+        )
+
+        content = json.loads(response.content)
+
+        # Still get the 2 elements because showDeleted is true
+        self.assertResponseNoErrors(response)
+        self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 2)
+
+        response = self.query(
+            '''
+    
+            query policiesByInsuree($chfid: String!) {
+                policiesByInsuree(chfId:$chfid, showDeleted: false)
+                {
+                    totalCount
+                    pageInfo { hasNextPage, hasPreviousPage, startCursor, endCursor}
+                    edges
+                    {
+                        node
+                        {
+                            policyUuid,productCode,productName,officerCode,officerName,enrollDate,effectiveDate,startDate,expiryDate,status,policyValue,balance,ded,dedInPatient,dedOutPatient,ceiling,ceilingInPatient,ceilingOutPatient
+                        }
+                    }
+                }
+            }
+            ''',
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
+            variables={'chfid': self.insuree.chf_id}
+        )
+
+        content = json.loads(response.content)
+
+        # 1 element because showDeleted is false
+        self.assertResponseNoErrors(response)
+        self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 1)
+
     def test_query_with_variables_2(self):
         response = self.query(
             '''
@@ -303,6 +361,8 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         # Still get the policy even when validity_to is not null because of showDeleted true
         self.assertResponseNoErrors(response)
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
+        self.policy.validity_to = None
+        self.policy.save()
 
         response = self.query(
             '''
@@ -333,8 +393,6 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         self.assertResponseNoErrors(response)
         self.assertEqual(content['data']['policiesByFamily']['totalCount'], 1)
         self.assertEqual(UUID(content['data']['policiesByFamily']['edges'][0]['node']['policyUuid']), UUID(self.policy.uuid))
-        self.policy.validity_to = None
-        self.policy.save()
    
     def test_insuree_policy_query(self):
         
@@ -408,6 +466,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
                     startDate: "2024-06-01"
                     expiryDate: "2025-05-31"
                     value: "10000.00"
+                    periodicity: "Y"
                     productId: {self.product.id}
                     familyId: {self.insuree.family.id}
                     contributionPlanId: "{plan_id}"
