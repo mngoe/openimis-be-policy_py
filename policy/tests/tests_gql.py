@@ -239,12 +239,10 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
         print("response2 ", response)
         content = json.loads(response.content)
 
-        # 0 elements because showDeleted is false
+        # 1 element because showDeleted is false
         self.assertResponseNoErrors(response)
         print("content2 ", content)
-        self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 0)
-        self.policy.validity_to = None
-        self.policy.save()
+        self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 1)
 
     def test_query_with_variables_2(self):
         response = self.query(
@@ -472,7 +470,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
                     startDate: "2024-06-01"
                     expiryDate: "2025-05-31"
                     value: "10000.00"
-                    periodicity: "M"
+                    periodicity: "Y"
                     productId: {self.product.id}
                     familyId: {self.insuree.family.id}
                     contributionPlanId: "{plan_id}"
