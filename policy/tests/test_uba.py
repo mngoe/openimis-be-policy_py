@@ -7,7 +7,7 @@ village. Row security was simply absent here before, so these tests also pin dow
 district filter that now applies.
 """
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from core.apps import ENROLMENT_UBA_LINK_TYPE
 from core.services.userServices import create_or_update_user_districts
@@ -23,6 +23,7 @@ from policy.models import Policy
 from product.test_helpers import create_test_product
 
 
+@override_settings(ROW_SECURITY=True)
 class EnrolmentUbaPolicyRowSecurityTest(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -121,6 +122,7 @@ class EnrolmentUbaPolicyRowSecurityTest(TestCase):
         self.assertEqual({self.linked_policy.id}, set(visible.values_list("id", flat=True)))
 
 
+@override_settings(ROW_SECURITY=True)
 class EnrolmentUbaPolicyRightsTest(TestCase):
     """
     The rights side: the policy rights held in the UBA bag only are granted on the policies
