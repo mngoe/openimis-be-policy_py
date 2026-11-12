@@ -35,13 +35,31 @@ class TestPolicyInvoice(TestCase):
         mock_create.return_value = {
             "success": False
         }
+        calculation = str(uuid.uuid4())
+
+        benefit_plan_type = ContentType.objects.get_for_model(Product)
+
+        contribution_plan = ContributionPlan(
+            code="AMS",
+            name="AMS Contribution familiale",
+            calculation=calculation,
+            date_valid_from=date(2020, 1, 1),
+            benefit_plan_type=benefit_plan_type,
+            benefit_plan_id=self.product.id,
+            periodicity=1
+        )
+        contribution_plan.save(username=self.user.username)
         data = {
             "family": self.family,
+            "family_id": self.family.id,
             "product": self.product,
             "audit_user_id": 1,
             "value": 0,
             "start_date": date(2025, 1, 1),
             "enroll_date": date(2025, 1, 1),
+            "periodicity": "M",
+            "payment_day": 5,
+            "contribution_plan_id": contribution_plan.uuid
         }
         policy = self.service.create_policy(data, self.user)
         self.assertEqual(policy.status, 2)
@@ -116,11 +134,15 @@ class TestPolicyInvoice(TestCase):
 
         data = {
             "family": self.family,
+            "family_id": self.family.id,
             "product": self.product,
             "audit_user_id": 1,
             "value": 0,
             "start_date": date(2025, 1, 1),
             "enroll_date": date(2025, 1, 1),
+            "periodicity": "M",
+            "payment_day": 5,
+            "contribution_plan_id": contribution_plan.uuid
         }
         policy = self.service.create_policy(data, self.user)
 
@@ -298,5 +320,11 @@ class TestPolicyInvoice(TestCase):
                 policy,
             )
 
+        mock_invoice_service.return_value.create.assert_not_called()
+        mock_invoice_line_service.return_value.create.assert_not_called()
+
+        data["uuid"] = policy.uuid
+
+        self.service.update_policy(data, self.user)
         mock_invoice_service.return_value.create.assert_not_called()
         mock_invoice_line_service.return_value.create.assert_not_called()
