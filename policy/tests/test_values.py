@@ -13,7 +13,7 @@ class PolicyValuesTestCase(TestCase):
     test_child_dob=py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority-2)
     def test_new_policy_basis(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
-        spouse = Relation.objects.get_or_create(
+        spouse, _ = Relation.objects.get_or_create(
             id=8,
             relation="Spouse",
             alt_language="Époux"
@@ -61,7 +61,7 @@ class PolicyValuesTestCase(TestCase):
 
     def test_new_policy_lump_sum_and_cycles(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
-        spouse = Relation.objects.get_or_create(
+        spouse, _ = Relation.objects.get_or_create(
             id=8,
             relation="Spouse",
             alt_language="Époux"
@@ -115,7 +115,7 @@ class PolicyValuesTestCase(TestCase):
 
     def test_new_policy_admin_period_max_members_insurance_period(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"chf_id":"tnpapmmip","dob": core.datetime.date(1985, 5, 5)})
-        spouse = Relation.objects.get_or_create(
+        spouse, _ = Relation.objects.get_or_create(
             id=8,
             relation="Spouse",
             alt_language="Époux"
