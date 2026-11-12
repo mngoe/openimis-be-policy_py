@@ -21,7 +21,7 @@ class PolicyValuesTestCase(TestCase):
         create_test_insuree( with_family = False,
             custom_props={
                 "dob": core.datetime.date(1989, 9, 9),
-                "relationship": spouse,
+                "relationship": spouse.id if hasattr(spouse, 'id') else spouse,
                 "family": head_insuree.family
             })
 
@@ -69,7 +69,7 @@ class PolicyValuesTestCase(TestCase):
         create_test_insuree( with_family = False,
             custom_props={
                 "dob": core.datetime.date(1989, 9, 9),
-                "relationship": spouse,
+                "relationship": spouse.id if hasattr(spouse, 'id') else spouse,
                 "family": head_insuree.family
             })
 
@@ -123,7 +123,7 @@ class PolicyValuesTestCase(TestCase):
         create_test_insuree(with_family = False,
             custom_props={
                 "dob": core.datetime.date(1989, 9, 9),
-                "relationship": spouse,
+                "relationship": spouse.id if hasattr(spouse, 'id') else spouse,
                 "family": head_insuree.family
             })
 
