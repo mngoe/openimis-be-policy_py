@@ -6,7 +6,10 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('policy', '0004_add_medical_oficer_reading_rights'),
+        ('policy', '0003_auto_20201021_0811'),
+    ]
+    replaces = [
+        ('policy', '0004_add_medical_oficer_reading_rights' )
     ]
 
     operations = [

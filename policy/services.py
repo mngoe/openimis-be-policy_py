@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime as py_datetime, date as py_date
 from django.core.cache import caches
 import core
+from dateutil.relativedelta import relativedelta
 from claim.models import Claim, ClaimItem
 from django import dispatch
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -13,13 +14,17 @@ from django.template import Template, Context
 from django.utils.translation import gettext as _
 from graphene.utils.str_converters import to_snake_case
 from core.signals import register_service_signal
-from insuree.models import Insuree, InsureePolicy
+from insuree.models import Family, Insuree, InsureePolicy
 from insuree.services import create_insuree_renewal_detail
 from medical.models import Service, Item
 from policy.apps import PolicyConfig
+from policy.member_ages import (
+    _date as _as_date, has_age_limits, members_coverage, covered_members, member_coverage,
+    insuree_policy_values, apply_member_dates, member_dates,
+)
 from policy.utils import MonthsAdd
 from product.models import Product
-from .models import Policy, PolicyRenewal
+from .models import Policy, PolicyRenewal, eligibility_cache_key
 from cs.models import ChequeImportLine
 
 logger = logging.getLogger(__name__)
@@ -37,53 +42,39 @@ def reset_policy_before_update(policy):
 cache = caches['coverage']
 
 
+def not_covered_message(product, coverage, start_date):
+    """The refusal of one member, in the wording the users (and the frontend alert) know."""
+    member = coverage.member
+    if coverage.reason == "no_dob":
+        return f"L'assuré(e) {member.chf_id} n'a pas de date de naissance: les limites d'âge du produit ne peuvent être vérifiées"
+    age = relativedelta(_as_date(start_date), _as_date(member.dob)).years
+    if coverage.reason == "below_min":
+        return (f"L'assuré(e) {member.chf_id} avec l'âge {age} n'a pas encore l'âge minimal requis "
+                f"renseigné sur le produit qui est de {product.age_minimal}")
+    return (f"L'assuré(e) {member.chf_id} avec l'âge {age} a dépassé(e) l'âge maximal "
+            f"renseigné sur le produit qui est de {product.age_maximal}")
+
+
 class PolicyService:
     def __init__(self, user):
         self.user = user
 
     @register_service_signal('policy_service.create_or_update')
     def update_or_create(self, data, user):
-        print("Data is ", data)
+        logger.debug("Data is %s", data)
         policy_uuid = data.get('uuid', None)
         familyid = data.get('family_id', None)
-        insurees = Insuree.objects.filter(family=familyid)
         product_id = data.get('product_id', None)
-        # expiry_date = data.get('expiry_date', None)
-        if insurees and product_id:
-            member = insurees[0]
-            print("Dob ", member.dob)
-            date_format = "%Y-%m-%d"
-            today = py_datetime.strptime(str(py_datetime.now().date()), date_format)
-            insuree_dob = py_datetime.strptime(str(member.dob), date_format)
-            delta = today - insuree_dob
-            age_patient = int(round(delta.days / 365.0))
-            print("age_patient ", age_patient)
-            product = Product.objects.get(id=product_id)
-            print("Age Max sur le produit ", product.age_maximal)
-            print("Age Min sur le produit ", product.age_minimal)
-            # the_date = py_datetime.strptime(
-            #     str(expiry_date), "%Y-%m-%d").date()
-            if product.age_minimal:
-                if(age_patient < product.age_minimal):
-                    # The insuree's age is lower than the min age
-                    raise Exception(
-                        f"L'assuré(e) avec l'âge {age_patient} n'a pas encore l'âge minimal requis "
-                        f"renseigné sur le produit qui est de {product.age_minimal}"
-                    )
-            if product.age_maximal:
-                diff = product.age_maximal - age_patient
-                print("diff ", diff)
-                if(diff < 0):
-                    # The insuree's age is greater than the max age
-                    raise Exception(
-                        f"L'assuré(e) avec l'âge {age_patient} a dépassé(e) l'âge maximal "
-                        f"renseigné sur le produit qui est de {product.age_maximal}"
-                    )
-                # from dateutil.relativedelta import relativedelta
-                # exp_date = the_date + relativedelta(years=+diff)
-                # print("exp_date ", exp_date)
-                # data["expiry_date"] = exp_date
-                print(data["expiry_date"])
+        family = Family.objects.filter(id=familyid).first() if familyid else None
+        product = Product.objects.filter(id=product_id).first() if product_id else None
+        if family is not None and product is not None and has_age_limits(product):
+            # every current member is checked; a policy covering no one is refused
+            start_date = data.get('start_date') or data.get('enroll_date')
+            coverages = members_coverage(product, family, start_date, data.get('expiry_date'))
+            logger.debug("Members covered %s", [(c.member.chf_id, c.covered, c.reason) for c in coverages])
+            if not covered_members(coverages):
+                raise ValidationError(" ; ".join(
+                    not_covered_message(product, coverage, start_date) for coverage in coverages))
         if isinstance(data['enroll_date'], str):
             data['enroll_date'] = py_datetime.strptime(data['enroll_date'], "%Y-%m-%d").date()
         if 'enroll_date' in data and data['enroll_date'] > py_date.today():
@@ -94,14 +85,14 @@ class PolicyService:
             policy_number = data.get('policy_number', None)
             if policy_number:
                 errors = validate_policy_number(policy_number, True)
-                print("errors ", errors)
+                logger.debug("errors %s", errors)
                 if len(errors):
                     raise Exception((errors[0]["message"]))
                 cheques = ChequeImportLine.objects.filter(
                     chequeImportLineCode=policy_number,
                     chequeImportLineStatus='New'
                 )
-                print("cheques ", cheques)
+                logger.debug("cheques %s", cheques)
                 if cheques:
                     current_cheque = cheques[0]
                     setattr(current_cheque, "chequeImportLineStatus", "Used")
@@ -155,13 +146,13 @@ class PolicyService:
                                 # Si l'assuré a une police FAGEP et on veut attribuer un programme
                                 # CCS, la police FAGEP doit se desactriver
                                 if prod.program.code == "PAL" and program.code == "CCS":
-                                    print("Mise police en attente...")
+                                    logger.debug("Mise police en attente...")
                                     setattr(police, "status", 1)
                                     police.save()
         policy = Policy.objects.create(**data)
         # If a policy has a value of 0 it means that this policy is free
         # we activate the policy immediatelly
-        print("value is ", data['value'])
+        logger.debug("value is %s", data['value'])
         if int(data['value']) == 0:
             setattr(policy, "status",2)
             setattr(policy, "effective_date", data['start_date'])
@@ -182,6 +173,8 @@ class PolicyService:
             if payer_uuid is not None:
                 premium_data["payer_uuid"] = payer_uuid
             premium_action(premium_data, user)
+            # the payment resets every member to the policy dates
+            apply_member_dates(policy)
         return policy
 
     def generate_contribution_receipt(self, product, enroll_date):
@@ -808,11 +801,10 @@ class NativeEligibilityService(object):
         eligibility.item_left = items_left
 
         # InsPol -> Policy -> Product -> dedrem
-        cached_data = cache.get(
-            f"eligibility_{insuree.family_id or insuree.id}"
-        )
+        cache_key = eligibility_cache_key(insuree.family_id or insuree.id)
+        cached_data = cache.get(cache_key)
 
-        print("cached_data ", cached_data) 
+        logger.debug("cached_data %s", cached_data)
         if cached_data and str(insuree.id) in cached_data:
             result = cached_data[str(insuree.id)]
         else:
@@ -919,14 +911,11 @@ class NativeEligibilityService(object):
                 .order_by("-expiry_date")
                 .first()
             )
+            # the entry is per family: keep the other members already cached
             if not cached_data:
                 cached_data = {}
-                cached_data[str(insuree.id)] = result
-            cache.set(
-                f"eligibility_{insuree.family_id or insuree.id}",
-                result,
-                None,
-            )
+            cached_data[str(insuree.id)] = result
+            cache.set(cache_key, cached_data, None)
 
         if result is None:
             eligibility.total_admissions_left = 0
@@ -1258,18 +1247,28 @@ HOF{% endif %}
 
 
 def update_insuree_policies(policy, audit_user_id):
-    print("Member Update Insuree policies")
+    """
+    One InsureePolicy per covered member (policy.member_ages): a member outside the
+    product's age limits over the period is not covered (their current row is closed),
+    one reaching the minimum / maximum age within it is covered from / until that day.
+    """
+    logger.debug("Member Update Insuree policies")
+    product = policy.product
     for member in policy.family.members.filter(validity_to__isnull=True):
         existing_ip = InsureePolicy.objects.filter(validity_to__isnull=True, insuree=member, policy=policy).first()
+        coverage = member_coverage(product, member, policy.start_date, policy.expiry_date)
+        if not coverage.covered:
+            if existing_ip:
+                existing_ip.delete_history()
+            logger.debug("Not covered (%s): %s - %s", coverage.reason, member.chf_id, policy.uuid)
+            continue
         if existing_ip:
             existing_ip.save_history()
         ip, ip_created = InsureePolicy.objects.filter(validity_to__isnull=True).update_or_create(
             insuree=member, policy=policy,
             defaults=dict(
                 enrollment_date=policy.enroll_date,
-                start_date=policy.start_date,
-                effective_date=policy.effective_date,
-                expiry_date=policy.expiry_date,
+                **insuree_policy_values(product, member, policy),
                 offline=policy.offline,
                 audit_user_id=audit_user_id
             )
@@ -1278,6 +1277,36 @@ def update_insuree_policies(policy, audit_user_id):
             logger.debug("Created InsureePolicy(%s) %s - %s", ip.id, member.chf_id, policy.uuid)
         else:
             logger.debug("Updated InsureePolicy(%s) %s - %s", ip.id, member.chf_id, policy.uuid)
+
+
+def update_insuree_policies_dates(policy, activation_date=None):
+    """
+    The InsureePolicy dates of the current members of `policy`, for the contribution
+    module (a payment changing the policy) - the policy owns them:
+    - without `activation_date`: the policy dates changed (activation, renewal): every
+      member gets them;
+    - with `activation_date`: the policy was already effective, its members are
+      re-activated from that date (only the effective date changes).
+    A member covered for part of the period (product age limits, policy.member_ages)
+    keeps their own dates within those.
+    """
+    effective = activation_date or policy.effective_date
+    if effective is not None and policy.start_date is not None \
+            and _as_date(effective) < _as_date(policy.start_date):
+        effective = policy.start_date  # never effective before the start
+    rows = policy.insuree_policies.filter(validity_to__isnull=True).select_related("insuree")
+    for insuree_policy in rows:
+        dates = member_dates(policy.product, insuree_policy.insuree, policy, effective_date=effective)
+        if dates is None:
+            dates = {"effective_date": effective} if activation_date else {
+                "start_date": policy.start_date,
+                "effective_date": policy.effective_date,
+                "expiry_date": policy.expiry_date,
+            }
+        changed = {field: value for field, value in dates.items()
+                   if _as_date(getattr(insuree_policy, field)) != _as_date(value)}
+        if changed:
+            InsureePolicy.objects.filter(id=insuree_policy.id).update(**changed)
 
 
 def policy_status_premium_paid(policy, effective_date):
@@ -1291,6 +1320,11 @@ def policy_status_premium_paid(policy, effective_date):
                     if prod:
                         if program.idProgram == prod.program.idProgram:
                             raise Exception("Vous ne pouvez pas avoir plusieurs polices actives pour un même programme pour un même assuré")                      
+        # effective from the payment, never before the start: a policy dated in the
+        # future is not active on the payment already
+        if effective_date is not None and policy.start_date is not None \
+                and _as_date(effective_date) < _as_date(policy.start_date):
+            effective_date = policy.start_date
         policy.effective_date = effective_date
         policy.status = Policy.STATUS_ACTIVE
     else:
@@ -1304,10 +1338,10 @@ def policy_status_payment_matched(policy):
 
 def validate_policy_number(policy_number, is_new_policy=False):
     if is_new_policy:
-        print("policy_number ", policy_number)
-        print("is_new_policy ", is_new_policy)
+        logger.debug("policy_number %s", policy_number)
+        logger.debug("is_new_policy %s", is_new_policy)
         cheques = ChequeImportLine.objects.filter(chequeImportLineCode=policy_number)
-        print("cheque ", cheques)
+        logger.debug("cheque %s", cheques)
         if cheques:
             if cheques[0].chequeImportLineStatus=="Used":
                 return [{"message": "Chèque %s déjà utilisé" % policy_number}]

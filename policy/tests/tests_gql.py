@@ -12,6 +12,7 @@ from graphql_jwt.shortcuts import get_token
 from medical.test_helpers import create_test_item, create_test_service
 from insuree.test_helpers import create_test_insuree
 from policy.test_helpers import create_test_policy, dts
+from policy.models import Policy
 from contribution.test_helpers import create_test_premium
 from product.models import ProductItemOrService
 from product.test_helpers import (
@@ -309,7 +310,7 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             UUID(self.policy.uuid),
         )
 
-    def test_insuree_policy_query(self):
+    def test_insuree_service_and_item_eligibility_query(self):
 
         response = self.query(
             f"""
@@ -376,8 +377,15 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"},
             variables={"chfid": self.insuree.chf_id, "activeOrLastExpiredOnly": True},
         )
-        content = self.get_mutation_result(muuid, self.admin_token)
-        
+        # raises when the mutation logged an error
+        self.get_mutation_result(muuid, self.admin_token)
+        policy = Policy.objects.filter(
+            family_id=self.insuree.family.id, product_id=self.product2.id, validity_to__isnull=True
+        ).first()
+        self.assertIsNotNone(policy)
+        self.assertEqual(str(policy.enroll_date), "2024-04-07")
+        self.assertEqual(policy.officer_id, self.test_officer.id)
+
     def test_insuree_policy_value_query(self):
 
         response = self.query(

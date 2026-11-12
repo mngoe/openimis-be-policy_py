@@ -65,3 +65,27 @@ msgstr "On idle policies can be updated"
 #: policy/values.py:178
 msgid "policy.validation.members_count_above_max"
 msgstr "Number of insurees %(count)s is above policy maximum: %(max)s"
+
+#: policy/values.py
+msgid "policy.validation.member_not_covered_below_min"
+msgstr "Insuree %(chf_id)s is below the minimum age of the product: not covered"
+
+#: policy/values.py
+msgid "policy.validation.member_not_covered_above_max"
+msgstr "Insuree %(chf_id)s has reached the maximum age of the product: not covered"
+
+#: policy/values.py
+msgid "policy.validation.member_not_covered_no_dob"
+msgstr "Insuree %(chf_id)s has no date of birth: not covered"
+
+#: policy/values.py
+msgid "policy.validation.member_coverage_starts"
+msgstr "Insuree %(chf_id)s reaches the minimum age of the product: covered from %(date)s"
+
+#: policy/values.py
+msgid "policy.validation.member_coverage_ends"
+msgstr "Insuree %(chf_id)s reaches the maximum age of the product: covered until %(date)s"
+
+#: policy/values.py
+msgid "policy.validation.no_member_covered"
+msgstr "No member of the family is within the age limits of the product"

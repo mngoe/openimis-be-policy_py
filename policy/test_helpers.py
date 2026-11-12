@@ -5,6 +5,7 @@ from policy.models import Policy
 from policy.values import policy_values
 from product.models import Product
 import datetime
+from core.models import User
 from core.test_helpers import create_test_interactive_user
 
 
@@ -28,8 +29,10 @@ def create_test_policy2(product, insuree, link=True, valid=True, custom_props=No
     :param custom_props: dictionary of custom values for the Policy, when overriding a foreign key, override the _id
     :return: The created Policy and InsureePolicy
     """
-    user = None
-    user = create_test_interactive_user(username="tesAdmin")
+    # a fixed username, so the second call in one test run used to collide on
+    # core_User.username: reuse the user when it is already there
+    user = User.objects.filter(username="tesAdmin").first() \
+        or create_test_interactive_user(username="tesAdmin")
     policy = Policy.objects.create(
         **{
             "family": insuree.family,

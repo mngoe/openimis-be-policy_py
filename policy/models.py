@@ -4,22 +4,28 @@ from core import fields
 from core import models as core_models
 from core.utils import filter_validity
 from core.models import Officer
+from core.apps import ENROLMENT_UBA_LINK_TYPE
 from django.core.cache import caches
 cache = caches['coverage']
-from django_redis.cache import RedisCache
 
 from django.conf import settings
 from django.db import models
 from django.apps import apps
 from graphql import ResolveInfo
-from insuree.models import Family
+from insuree.models import Family, InsureePolicy
 from product.models import Product
 from django.utils import timezone as django_tz 
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
+from location.models import LocationManager
+
 
 class Policy(core_models.VersionedModel):
+    # A policy is as visible as the family it covers (which carries the ENROLMENT
+    # / district rule in Family.get_queryset).
+    row_scope = core_models.ParentScope("family")
+
     id = models.AutoField(db_column='PolicyID', primary_key=True)
     uuid = models.CharField(db_column='PolicyUUID', max_length=36, default=uuid.uuid4, unique=True)
 
@@ -79,25 +85,32 @@ class Policy(core_models.VersionedModel):
     STAGE_EXPIRATION_FORCED = 'F'
 
     @classmethod
-    def get_queryset(cls, queryset, user):
-        queryset = Policy.filter_queryset(queryset)
-        # GraphQL calls with an info object while Rest calls with the user itself
-        if isinstance(user, ResolveInfo):
-            user = user.context.user
-        if settings.ROW_SECURITY and user.is_anonymous:
-            return queryset.filter(id=-1)
-        # TODO: check the access to the policy information but how ?
-        #   Policy -> Product -> Location ? Policy -> Insurees -> HF -> Location ?
-        # if settings.ROW_SECURITY:
-        #     dist = UserDistrict.get_user_districts(user._u)
-        #     return queryset.filter(
-        #         health_facility__location_id__in=[l.location.id for l in dist]
-        #     )
-        
-        return queryset
+    def get_queryset(cls, queryset, user=None, *, validity=None, audits=None):
+        """Current policies the user may see (OP-2029 validity / audits on request)."""
+        queryset = cls.apply_row_filters(queryset, validity, audits, default=cls.filter_queryset)
+        return cls.get_scoped_queryset(queryset, user)
+
+    @classmethod
+    def get_scoped_queryset(cls, queryset, user):
+        """Row security only, superseded versions included.
+
+        A superseded policy keeps its family, so the same rule applies to it; this
+        is the entry point for queries that show history. The family carries the
+        district + ENROLMENT (UBA) rule; anonymous users get no rows.
+        """
+        user = cls.scoping_user(user)
+        if queryset is None:
+            queryset = cls.objects.all()
+        if settings.ROW_SECURITY and (user is None or user.is_anonymous):
+            return cls.no_rows(queryset)
+        if not settings.ROW_SECURITY:
+            return queryset
+        return super().get_queryset(queryset, user)
 
 
 class PolicyRenewal(core_models.VersionedModel):
+    row_scope = core_models.ParentScope("policy")
+
     id = models.AutoField(db_column='RenewalID', primary_key=True)
     uuid = models.CharField(db_column='RenewalUUID', max_length=36, default=uuid.uuid4, unique=True)
 
@@ -133,6 +146,7 @@ class PolicyRenewal(core_models.VersionedModel):
 
 
 class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
+    row_scope = core_models.ParentScope("policy")
     policy = models.ForeignKey(Policy, models.DO_NOTHING,
                                  related_name='mutations')
     mutation = models.ForeignKey(
@@ -143,6 +157,7 @@ class PolicyMutation(core_models.UUIDModel, core_models.ObjectMutation):
         db_table = "policy_PolicyMutation"
 
 class PolicyRenewalMutation(core_models.UUIDModel, core_models.ObjectMutation):
+    row_scope = core_models.ParentScope("policy_renewal")
     policy_renewal = models.ForeignKey(PolicyRenewal, models.DO_NOTHING,
                                  related_name='mutations')
     mutation = models.ForeignKey(
@@ -152,32 +167,57 @@ class PolicyRenewalMutation(core_models.UUIDModel, core_models.ObjectMutation):
         managed = True
         db_table = "policy_renewal_PolicyMutation"
 
+ELIGIBILITY_GENERATION_KEY = "eligibility_generation"
+
+
+def eligibility_cache_key(owner_id):
+    """
+    The eligibility cache entry of a family (or of an insuree without one). The key
+    carries a generation so that every entry can be dropped at once by bumping it,
+    without clearing the cache: the cache aliases share their store.
+    """
+    generation = cache.get(ELIGIBILITY_GENERATION_KEY, 0)
+    return f"eligibility_{generation}_{owner_id}"
+
+
+def invalidate_all_eligibility_cache():
+    try:
+        cache.incr(ELIGIBILITY_GENERATION_KEY)
+    except ValueError:
+        # incr fails on a missing key
+        cache.set(ELIGIBILITY_GENERATION_KEY, 1, None)
+    if hasattr(cache, "delete_pattern"):
+        # django-redis: also free the entries of the previous generations
+        cache.delete_pattern("eligibility_*_*")
+
+
 if "claim" in sys.modules:
     from claim.models import Claim
 
     @receiver(post_save, sender=Claim)
     @receiver(post_delete, sender=Claim)
-    def clean_enquire_cache_claim(sender, instance, *args, **kwagrs):
-        cache.delete(
-            f"eligibility_{instance.insuree.family_id or instance.insuree.id}"
-        )
+    def clean_enquire_cache_claim(sender, instance, *args, **kwargs):
+        cache.delete(eligibility_cache_key(instance.insuree.family_id or instance.insuree.id))
 
 @receiver(post_save, sender=Product)
 @receiver(post_delete, sender=Product)
-def clean_all_enquire_cache_product(sender, instance, *args, **kwagrs):
-    if isinstance(cache, RedisCache):
-        cache.delete("eligibility_*")
-    else:
-        cache.clear()
+def clean_all_enquire_cache_product(sender, instance, *args, **kwargs):
+    invalidate_all_eligibility_cache()
 
 
 @receiver(post_save, sender=Policy)
 @receiver(post_delete, sender=Policy)
-def clean_all_enquire_cache_policy(sender, instance, *args, **kwagrs):
-    cache.delete(f"eligibility_{instance.family_id}")
+def clean_all_enquire_cache_policy(sender, instance, *args, **kwargs):
+    cache.delete(eligibility_cache_key(instance.family_id))
+
+
+@receiver(post_save, sender=InsureePolicy)
+@receiver(post_delete, sender=InsureePolicy)
+def clean_enquire_cache_insuree_policy(sender, instance, *args, **kwargs):
+    cache.delete(eligibility_cache_key(instance.insuree.family_id or instance.insuree_id))
 
 
 @receiver(post_save, sender=Family)
 @receiver(post_delete, sender=Family)
-def clean_all_enquire_cache_family(sender, instance, *args, **kwagrs):
-    cache.delete(f"eligibility_{instance.id}")
+def clean_all_enquire_cache_family(sender, instance, *args, **kwargs):
+    cache.delete(eligibility_cache_key(instance.id))

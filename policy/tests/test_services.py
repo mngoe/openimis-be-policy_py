@@ -588,7 +588,7 @@ class RenewalsTestCase(TestCase):
         import datetime
         insuree, family = create_test_insuree_for_policy(
             custom_props={"chf_id": "TESTCHFSMS", "phone": "+33644444719"},
-            family_custom_props={"location_id": 62},
+            family_custom_props={"location": create_test_village()},
         )
         product = create_test_product("VISIT", custom_props={"age_minimal":1})
         officer = create_test_officer(custom_props={"phone": "+32444444444", "phone_communication": True})
@@ -610,13 +610,13 @@ class RenewalsTestCase(TestCase):
         # Let's change the min age so that it should be greater than the insuree's age
         product2 = create_test_product("VISIT", custom_props={"age_minimal": 70})
         data["product_id"] = product2.id
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(Exception, "pas encore l'âge minimal"):
             policy_service.update_or_create(data=data, user=self.user_policy)
 
         # Let's change back the min age and set the max age now
         product3 = create_test_product("VISIT", custom_props={"age_minimal": 1, "age_maximal": 25})
         data["product_id"] = product3.id
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(Exception, "dépassé\\(e\\) l'âge maximal"):
             policy_service.update_or_create(data=data, user=self.user_policy)
 
 class SetExpirationForcedServiceTestCase(TestCase):
