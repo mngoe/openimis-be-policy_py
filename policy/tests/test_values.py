@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 
 class PolicyValuesTestCase(TestCase):
     test_child_dob=py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority-2)
-    user = create_test_interactive_user
+    user = create_test_interactive_user()
     def test_new_policy_basis(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
         spouse, _ = Relation.objects.get_or_create(
