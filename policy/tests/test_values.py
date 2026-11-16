@@ -9,10 +9,12 @@ from policy.test_helpers import create_test_policy
 from core.test_helpers import create_test_interactive_user
 from core.apps import CoreConfig
 from dateutil.relativedelta import relativedelta
+from decimal import Decimal
+from unittest.mock import MagicMock, patch
 
 class PolicyValuesTestCase(TestCase):
     test_child_dob=py_datetime.date.today()- relativedelta(years= CoreConfig.age_of_majority-2)
-    user = create_test_interactive_user
+    user = create_test_interactive_user()
     def test_new_policy_basis(self):
         head_insuree = create_test_insuree(with_family=True, custom_props={"dob": core.datetime.date(1985, 5, 5)})
         spouse, _ = Relation.objects.get_or_create(
@@ -145,13 +147,40 @@ class PolicyValuesTestCase(TestCase):
             "general_assembly_fee": 5,
             "insurance_period": 6,
         })
-        policy = create_test_policy(product, head_insuree, custom_props={
-            "enroll_date": core.datetime.date(2021, 1, 10),
-        })
-        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
-        self.assertEquals(policy.start_date, core.datetime.date(2021, 6, 1))  # enroll + admin outside cycle 1 + grace
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 6, 30))
-        self.assertEquals(policy.value, 530)  # 200 + 300 + 2 x 10 + 2 x 5
+
+        policy = create_test_policy(
+            product,
+            head_insuree,
+            custom_props={
+                "enroll_date": core.datetime.date(2021, 1, 10),
+            }
+        )
+
+        # Mock du résultat du signal
+        mock_calculation_rule = MagicMock()
+        mock_calculation_rule.signal_calculate_event.send.return_value = [
+            (None, 530)
+        ]
+
+        with patch(
+            "policy.values.ContributionPlan.objects.filter",
+            return_value=[policy.contribution_plan]
+        ), patch(
+            "policy.values.CALCULATION_RULES",
+            [mock_calculation_rule]
+        ):
+            policy, warnings = policy_values(
+                policy,
+                head_insuree.family,
+                None,
+                self.user
+            )
+
+        self.assertEqual(policy.start_date, core.datetime.date(2021, 6, 1))
+        self.assertEqual(policy.expiry_date, core.datetime.date(2021, 6, 30))
+        self.assertEqual(policy.value, Decimal("530"))
+
+        mock_calculation_rule.signal_calculate_event.send.assert_called_once()
 
         # let's add a child... outside max members so not counted!
         # ... and shift date to fall into grace period

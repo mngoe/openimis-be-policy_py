@@ -206,12 +206,10 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             variables={'chfid': self.insuree.chf_id}
         )
 
-        print("response1 ", response)
         content = json.loads(response.content)
 
         # Still get the 2 elements because showDeleted is true
         self.assertResponseNoErrors(response)
-        print("content1 ", content)
         self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 2)
 
         response = self.query(
@@ -236,12 +234,10 @@ class PolicyGraphQLTestCase(openIMISGraphQLTestCase):
             variables={'chfid': self.insuree.chf_id}
         )
 
-        print("response2 ", response)
         content = json.loads(response.content)
 
         # 1 element because showDeleted is false
         self.assertResponseNoErrors(response)
-        print("content2 ", content)
         self.assertEqual(content['data']['policiesByInsuree']['totalCount'], 1)
 
     def test_query_with_variables_2(self):
