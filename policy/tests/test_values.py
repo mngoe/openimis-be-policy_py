@@ -163,9 +163,6 @@ class PolicyValuesTestCase(TestCase):
         ]
 
         with patch(
-            "policy.values.ContributionPlan.objects.filter",
-            return_value=[policy.contribution_plan]
-        ), patch(
             "policy.values.CALCULATION_RULES",
             [mock_calculation_rule]
         ):
