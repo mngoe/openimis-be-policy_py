@@ -122,10 +122,29 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2020, 11, 10),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
-        self.assertEquals(policy.start_date, core.datetime.date(2021, 1, 1))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 1, 31))
-        self.assertEquals(policy.value, 230)  # 200 + 2 x 10 + 2 x 5
+        # Mock du résultat du signal
+        mock_calculation_rule = MagicMock()
+        mock_calculation_rule.signal_calculate_event.send.return_value = [
+            (None, 230)
+        ]
+
+        with patch(
+            "policy.values.ContributionPlan.objects.filter",
+            return_value=[policy.contribution_plan]
+        ), patch(
+            "policy.values.CALCULATION_RULES",
+            [mock_calculation_rule]
+        ):
+            policy, warnings = policy_values(
+                policy,
+                head_insuree.family,
+                None,
+                self.user
+            )
+
+        self.assertEqual(policy.start_date, core.datetime.date(2021, 1, 1))
+        self.assertEqual(policy.expiry_date, core.datetime.date(2021, 1, 31))
+        self.assertEqual(policy.value, Decimal("230"))
 
         # let's add a child (outside threshold)  and shift date in 1st cycle grace period
         child = Relation.objects.get(id=4)
