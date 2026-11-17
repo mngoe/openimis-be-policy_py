@@ -74,7 +74,11 @@ class PolicyValuesTestCase(TestCase):
         mock_calculation_rule.signal_calculate_event.send.assert_called_once()
 
         # let's add a child and shift date to 1st of a month
-        child = Relation.objects.get(id=4)
+        child, _ = Relation.objects.get_or_create(
+            id=4,
+            relation="Son/Daughter",
+            alt_language="Fils/fille"
+        )
         create_test_insuree(with_family = False,
             custom_props={
                 "dob": self.test_child_dob,
@@ -147,7 +151,11 @@ class PolicyValuesTestCase(TestCase):
         self.assertEqual(policy.value, Decimal("230"))
 
         # let's add a child (outside threshold)  and shift date in 1st cycle grace period
-        child = Relation.objects.get(id=4)
+        child, _ = Relation.objects.get_or_create(
+            id=4,
+            relation="Son/Daughter",
+            alt_language="Fils/fille"
+        )
         create_test_insuree( with_family = False,
             custom_props={
                 "dob": self.test_child_dob,
@@ -229,7 +237,11 @@ class PolicyValuesTestCase(TestCase):
 
         # let's add a child... outside max members so not counted!
         # ... and shift date to fall into grace period
-        child = Relation.objects.get(id=4)
+        child, _ = Relation.objects.get_or_create(
+            id=4,
+            relation="Son/Daughter",
+            alt_language="Fils/fille"
+        )
         create_test_insuree(
             custom_props={
                 "dob": self.test_child_dob,
