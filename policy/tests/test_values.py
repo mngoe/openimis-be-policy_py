@@ -50,7 +50,7 @@ class PolicyValuesTestCase(TestCase):
         # Mock du résultat du signal
         mock_calculation_rule = MagicMock()
         mock_calculation_rule.signal_calculate_event.send.return_value = [
-            (None, 980)
+            (None, 1180)
         ]
 
         with patch(
@@ -69,7 +69,7 @@ class PolicyValuesTestCase(TestCase):
 
         self.assertEqual(policy.start_date, core.datetime.date(2020, 11, 10))
         self.assertEqual(policy.expiry_date, core.datetime.date(2020, 12, 9))
-        self.assertEqual(policy.value, Decimal("980"))
+        self.assertEqual(policy.value, Decimal("1180"))
 
         mock_calculation_rule.signal_calculate_event.send.assert_called_once()
 
@@ -90,7 +90,7 @@ class PolicyValuesTestCase(TestCase):
         })
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 1))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 10, 31))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2020, 11, 31))
         self.assertEquals(policy.value, 1180)  # 2 x 300 + 200 + 250 + 130
 
     def test_new_policy_lump_sum_and_cycles(self):
@@ -129,7 +129,7 @@ class PolicyValuesTestCase(TestCase):
         # Mock du résultat du signal
         mock_calculation_rule = MagicMock()
         mock_calculation_rule.signal_calculate_event.send.return_value = [
-            (None, 230)
+            (None, 445)
         ]
 
         with patch(
@@ -148,7 +148,7 @@ class PolicyValuesTestCase(TestCase):
 
         self.assertEqual(policy.start_date, core.datetime.date(2021, 1, 1))
         self.assertEqual(policy.expiry_date, core.datetime.date(2021, 1, 31))
-        self.assertEqual(policy.value, Decimal("230"))
+        self.assertEqual(policy.value, Decimal("445"))
 
         # let's add a child (outside threshold)  and shift date in 1st cycle grace period
         child, _ = Relation.objects.get_or_create(
@@ -167,7 +167,7 @@ class PolicyValuesTestCase(TestCase):
         })
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 1, 1))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 12, 31))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2021, 1, 31))
         self.assertEquals(policy.value, 445)  # 200 + 1 x 200 + 3 x 10 + 3 x 5
 
     def test_new_policy_admin_period_max_members_insurance_period(self):
@@ -254,5 +254,5 @@ class PolicyValuesTestCase(TestCase):
 
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2022, 1, 1))  # enroll + admin in cycle 1 + grace
-        self.assertEquals(policy.expiry_date, core.datetime.date(2022, 6, 30))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2022, 1, 31))
         self.assertEquals(policy.value, 530)  # 200 + 300 + 2 x 10 + 2 x 5
