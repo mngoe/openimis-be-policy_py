@@ -88,7 +88,14 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2020, 11, 1),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
+        with patch(
+            "policy.values.ContributionPlan.objects.filter",
+            return_value=[policy.contribution_plan]
+        ), patch(
+            "policy.values.CALCULATION_RULES",
+            [mock_calculation_rule]
+        ):
+            policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 1))
         self.assertEquals(policy.expiry_date, core.datetime.date(2020, 11, 30))
         self.assertEquals(policy.value, 1180)  # 2 x 300 + 200 + 250 + 130
