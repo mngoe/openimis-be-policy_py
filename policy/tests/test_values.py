@@ -47,10 +47,31 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2020, 11, 10),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
-        self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 10))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2020, 12, 9))
-        self.assertEquals(policy.value, 980)  # 2 x 300 + 250 + 130
+        # Mock du résultat du signal
+        mock_calculation_rule = MagicMock()
+        mock_calculation_rule.signal_calculate_event.send.return_value = [
+            (None, 980)
+        ]
+
+        with patch(
+            "policy.values.ContributionPlan.objects.filter",
+            return_value=[policy.contribution_plan]
+        ), patch(
+            "policy.values.CALCULATION_RULES",
+            [mock_calculation_rule]
+        ):
+            policy, warnings = policy_values(
+                policy,
+                head_insuree.family,
+                None,
+                self.user
+            )
+
+        self.assertEqual(policy.start_date, core.datetime.date(2020, 11, 10))
+        self.assertEqual(policy.expiry_date, core.datetime.date(2020, 12, 9))
+        self.assertEqual(policy.value, Decimal("980"))
+
+        mock_calculation_rule.signal_calculate_event.send.assert_called_once()
 
         # let's add a child and shift date to 1st of a month
         child = Relation.objects.get(id=4)
