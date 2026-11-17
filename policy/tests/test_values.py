@@ -90,7 +90,7 @@ class PolicyValuesTestCase(TestCase):
         })
         policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2020, 11, 1))
-        self.assertEquals(policy.expiry_date, core.datetime.date(2020, 11, 31))
+        self.assertEquals(policy.expiry_date, core.datetime.date(2020, 11, 30))
         self.assertEquals(policy.value, 1180)  # 2 x 300 + 200 + 250 + 130
 
     def test_new_policy_lump_sum_and_cycles(self):
@@ -165,7 +165,14 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
             "enroll_date": core.datetime.date(2021, 1, 11),
         })
-        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
+        with patch(
+            "policy.values.ContributionPlan.objects.filter",
+            return_value=[policy.contribution_plan]
+        ), patch(
+            "policy.values.CALCULATION_RULES",
+            [mock_calculation_rule]
+        ):
+            policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2021, 1, 1))
         self.assertEquals(policy.expiry_date, core.datetime.date(2021, 1, 31))
         self.assertEquals(policy.value, 445)  # 200 + 1 x 200 + 3 x 10 + 3 x 5
@@ -251,8 +258,14 @@ class PolicyValuesTestCase(TestCase):
         policy = create_test_policy(product, head_insuree, custom_props={
                 "enroll_date": core.datetime.date(2021, 12, 11),
             }, check = False)
-
-        policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
+        with patch(
+            "policy.values.ContributionPlan.objects.filter",
+            return_value=[policy.contribution_plan]
+        ), patch(
+            "policy.values.CALCULATION_RULES",
+            [mock_calculation_rule]
+        ):
+            policy, warnings = policy_values(policy, head_insuree.family, None, self.user)
         self.assertEquals(policy.start_date, core.datetime.date(2022, 1, 1))  # enroll + admin in cycle 1 + grace
         self.assertEquals(policy.expiry_date, core.datetime.date(2022, 1, 31))
         self.assertEquals(policy.value, 530)  # 200 + 300 + 2 x 10 + 2 x 5
