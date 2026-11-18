@@ -463,12 +463,13 @@ class PolicyService:
 @core.comparable
 class ByInsureeRequest(object):
 
-    def __init__(self, chf_id, active_or_last_expired_only=False, show_history=False, order_by=None, target_date=None):
+    def __init__(self, chf_id, active_or_last_expired_only=False, show_history=False, order_by=None, target_date=None, show_deleted=False):
         self.chf_id = chf_id
         self.active_or_last_expired_only = active_or_last_expired_only
         self.show_history = show_history
         self.order_by = order_by
         self.target_date = target_date
+        self.show_deleted = show_deleted
 
     def __eq__(self, other):
         return isinstance(other, self.__class__) and self.__dict__ == other.__dict__

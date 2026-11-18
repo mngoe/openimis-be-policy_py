@@ -63,6 +63,7 @@ class Query(graphene.ObjectType):
         show_history=graphene.Boolean(),
         order_by=graphene.String(),
         target_date=graphene.Date(),
+        show_deleted=graphene.Boolean(),
     )
     policies_by_family = graphene.relay.ConnectionField(
         PolicyByFamilyOrInsureeConnection,
@@ -222,6 +223,7 @@ class Query(graphene.ObjectType):
             chf_id=kwargs.get('chf_id'),
             active_or_last_expired_only=kwargs.get(
                 'active_or_last_expired_only', False),
+            show_deleted=kwargs.get('show_deleted', False),
             show_history=kwargs.get('show_history', False),
             order_by=kwargs.get('order_by', None),
             target_date=kwargs.get('target_date', None)
