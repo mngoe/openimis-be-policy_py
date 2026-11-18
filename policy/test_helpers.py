@@ -35,7 +35,8 @@ def create_test_policy2(product, insuree, link=True, valid=True, custom_props=No
     :param custom_props: dictionary of custom values for the Policy, when overriding a foreign key, override the _id
     :return: The created Policy and InsureePolicy
     """
-    product = create_test_product("TEST")
+    if not product:
+        product = create_test_product("TEST")
     try:
         user = User.objects.get(username='TestInteractiveTest')
     except ObjectDoesNotExist:
